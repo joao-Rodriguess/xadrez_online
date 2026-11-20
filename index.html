@@ -1,0 +1,543 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Chess 3D Royale — Xadrez 3D, IA Multi-Nível & Firebase Online</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/src/styles.css" />
+  </head>
+  <body>
+    <div id="app">
+      <!-- Top Bar -->
+      <header class="topbar">
+        <div class="brand">
+          <button id="btn-open-menu" class="btn btn-ghost btn-menu-trigger" title="Abrir Menu Principal">☰ Menu</button>
+          <span class="brand-crown">♔</span>
+          <div>
+            <h1>CHESS 3D ROYALE</h1>
+            <span id="connection-badge" class="badge badge-local">Modo Local / Bot</span>
+          </div>
+        </div>
+
+        <nav class="top-actions">
+          <button id="btn-new-game" class="btn btn-primary">✦ Nova Partida</button>
+          <button id="btn-piece-studio" class="btn btn-gold">🎨 Peças 3D</button>
+          <button id="btn-online-lobby" class="btn btn-accent">🌐 Online</button>
+          <button id="btn-firebase-config" class="btn btn-ghost" title="Configurações e Segurança Nuvem">⚙ Config / Nuvem</button>
+          <button id="btn-sound-toggle" class="btn btn-ghost" title="Ativar/Desativar Som">🔊 Som</button>
+        </nav>
+      </header>
+
+      <!-- Main Menu Screen Overlay -->
+      <section id="main-menu-screen" class="main-menu-screen">
+        <div class="menu-shell">
+          <div class="menu-header">
+            <div class="menu-logo-badge">♔</div>
+            <div>
+              <h2 class="menu-title">CHESS 3D ROYALE</h2>
+              <p class="menu-subtitle">Xadrez Tridimensional PBR • Inteligência Artificial 5 Níveis • Multiplayer Firebase</p>
+            </div>
+            <span id="menu-status-pill" class="badge badge-local">Local / Bot Pronto</span>
+          </div>
+
+          <button id="btn-resume-game" class="menu-resume-btn hidden">
+            <span>▶ Continuar Partida em Andamento</span>
+            <small id="resume-match-summary">Retornar ao tabuleiro</small>
+          </button>
+
+          <div class="menu-grid">
+            <button class="menu-card menu-card-primary" data-menu-action="bot">
+              <div class="menu-card-icon">🤖</div>
+              <div class="menu-card-body">
+                <strong>Jogar vs Bot IA</strong>
+                <p>Desafie 5 níveis do Aprendiz ao Grande Mestre com Eval Bar e dicas táticas.</p>
+              </div>
+              <span class="menu-card-arrow">→</span>
+            </button>
+
+            <button class="menu-card menu-card-accent" data-menu-action="online">
+              <div class="menu-card-icon">🌐</div>
+              <div class="menu-card-body">
+                <strong>Multiplayer Online</strong>
+                <p>Crie salas com código, compartilhe links e jogue em tempo real via Firebase.</p>
+              </div>
+              <span class="menu-card-arrow">→</span>
+            </button>
+
+            <button class="menu-card" data-menu-action="local">
+              <div class="menu-card-icon">👥</div>
+              <div class="menu-card-body">
+                <strong>Local 2 Jogadores</strong>
+                <p>Partida presencial no mesmo dispositivo com giro automático opcional.</p>
+              </div>
+              <span class="menu-card-arrow">→</span>
+            </button>
+
+            <button class="menu-card" data-menu-action="bot_vs_bot">
+              <div class="menu-card-icon">⚔</div>
+              <div class="menu-card-body">
+                <strong>Assistir Bot vs Bot</strong>
+                <p>Observe duas IAs duelando em tempo real sobre o tabuleiro 3D.</p>
+              </div>
+              <span class="menu-card-arrow">→</span>
+            </button>
+
+            <button class="menu-card menu-card-gold" data-menu-action="studio">
+              <div class="menu-card-icon">🎨</div>
+              <div class="menu-card-body">
+                <strong>Estúdio de Peças 3D</strong>
+                <p>Personalize estilo, material PBR, cores e brilho de cada peça individualmente.</p>
+              </div>
+              <span class="menu-card-arrow">→</span>
+            </button>
+
+            <button class="menu-card" data-menu-action="settings">
+              <div class="menu-card-icon">🔒</div>
+              <div class="menu-card-body">
+                <strong>Configurações & Segurança</strong>
+                <p>Tema do tabuleiro, áudio, auto-giro e status da conexão segura na nuvem.</p>
+              </div>
+              <span class="menu-card-arrow">→</span>
+            </button>
+          </div>
+
+          <div class="menu-footer">
+            <div class="menu-footer-item">
+              <label for="menu-board-theme-select">Tabuleiro 3D:</label>
+              <select id="menu-board-theme-select" class="select-compact"></select>
+            </div>
+            <div class="menu-footer-item">
+              <span class="hint-text">Dica: Clique e arraste para girar a câmera 3D • Role para dar zoom</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Main Workspace -->
+      <main class="workspace">
+        <!-- 3D Viewport + Eval Bar -->
+        <section class="viewport-wrap">
+          <div class="eval-bar-container" title="Avaliação da Posição (Brancas vs Pretas)">
+            <div id="eval-bar-fill" class="eval-bar-fill" style="height: 50%"></div>
+            <span id="eval-score-label" class="eval-score">0.0</span>
+          </div>
+
+          <div id="canvas-container" class="canvas-container"></div>
+
+          <!-- Floating Camera & Board Theme Controls -->
+          <div class="floating-controls">
+            <div class="control-group">
+              <button class="cam-btn" data-cam="w" title="Vista das Brancas">Brancas</button>
+              <button class="cam-btn" data-cam="b" title="Vista das Pretas">Pretas</button>
+              <button class="cam-btn" data-cam="top" title="Vista Tática Superior">Topo 2.5D</button>
+              <button class="cam-btn" data-cam="cinematic" title="Ângulo Cinemático">Cinema</button>
+            </div>
+            <div class="control-group">
+              <label for="board-theme-select" class="sr-only">Tema do Tabuleiro</label>
+              <select id="board-theme-select" class="select-compact" title="Tema do Tabuleiro 3D"></select>
+              <label class="toggle-chip" title="Girar câmera automaticamente a cada turno em modo local">
+                <input type="checkbox" id="chk-auto-flip" />
+                <span>Auto-Giro</span>
+              </label>
+            </div>
+          </div>
+
+          <!-- Game Status Overlay Banner -->
+          <div id="turn-banner" class="turn-banner">Vez das Brancas</div>
+
+          <!-- Game Over Card Overlay -->
+          <div id="gameover-card" class="gameover-card hidden">
+            <div class="gameover-crown">♔</div>
+            <h3 id="gameover-title">Fim de Partida</h3>
+            <p id="gameover-reason">Resultado</p>
+            <div class="gameover-actions">
+              <button id="btn-gameover-rematch" class="btn btn-primary">🔄 Jogar Novamente</button>
+              <button id="btn-gameover-studio" class="btn btn-gold">🎨 Peças 3D</button>
+              <button id="btn-gameover-menu" class="btn btn-ghost">☰ Menu Principal</button>
+            </div>
+          </div>
+        </section>
+
+        <!-- Right HUD Sidebar -->
+        <aside class="hud-panel">
+          <!-- Opponent / Top Player Card -->
+          <div id="card-black" class="player-card">
+            <div class="player-meta">
+              <div class="avatar avatar-black">♚</div>
+              <div class="player-info-col">
+                <div class="player-name-row">
+                  <span id="name-black" class="player-name">Bot Clube (1400)</span>
+                  <span id="presence-black" class="presence-pill hidden"></span>
+                </div>
+                <div id="lost-by-black" class="lost-row">Perdeu: 0 peças</div>
+                <div id="captured-by-black" class="captured-row"></div>
+              </div>
+            </div>
+            <div id="clock-black" class="clock">10:00</div>
+          </div>
+
+          <!-- Action Buttons -->
+          <div class="match-actions">
+            <button id="btn-hint" class="btn btn-sm btn-accent" title="Mostrar melhor lance segundo a IA">💡 Dica IA</button>
+            <button id="btn-undo" class="btn btn-sm btn-ghost" title="Desfazer último lance">↩ Desfazer</button>
+            <button id="btn-draw" class="btn btn-sm btn-ghost hidden">🤝 Empate</button>
+            <button id="btn-resign" class="btn btn-sm btn-danger">🏳 Desistir</button>
+          </div>
+
+          <!-- Online Room Info & Chat (Visible only in online mode) -->
+          <div id="online-panel" class="online-panel hidden">
+            <div class="room-header">
+              <span>Sala: <strong id="room-code-display">------</strong></span>
+              <button id="btn-copy-link" class="btn btn-xs btn-accent">📋 Copiar Convite</button>
+            </div>
+            <div id="opponent-presence-banner" class="presence-banner">⚪ Aguardando oponente entrar...</div>
+            <div id="draw-offer-banner" class="draw-offer hidden">
+              <span>Oponente ofereceu empate!</span>
+              <div>
+                <button id="btn-accept-draw" class="btn btn-xs btn-primary">Aceitar</button>
+                <button id="btn-decline-draw" class="btn btn-xs btn-ghost">Recusar</button>
+              </div>
+            </div>
+            <div id="rematch-banner" class="rematch-banner hidden">
+              <button id="btn-rematch" class="btn btn-sm btn-gold full-width">🔄 Solicitar Revanche</button>
+            </div>
+            <div id="chat-messages" class="chat-messages"></div>
+            <div class="quick-reactions">
+              <button class="react-btn" data-react="👏 Boa jogada!">👏</button>
+              <button class="react-btn" data-react="🔥 Jogada brilhante!">🔥</button>
+              <button class="react-btn" data-react="🤔 Pensando...">🤔</button>
+              <button class="react-btn" data-react="⚡ Rápido!">⚡</button>
+              <button class="react-btn" data-react="🤝 Bom jogo!">🤝</button>
+            </div>
+            <form id="chat-form" class="chat-form">
+              <input id="chat-input" type="text" placeholder="Mensagem no chat..." maxlength="150" />
+              <button type="submit" class="btn btn-xs btn-primary">Enviar</button>
+            </form>
+          </div>
+
+          <!-- Move History -->
+          <div class="history-box">
+            <div class="history-header">
+              <span>Histórico (clique p/ voltar)</span>
+              <span id="move-count-badge" class="mono">0 lances</span>
+            </div>
+            <div id="history-restart-bar" class="history-restart-bar hidden">
+              <span id="history-restart-label">Lance #1</span>
+              <div class="history-restart-btns">
+                <button id="btn-restart-from-point" class="btn btn-xs btn-gold">⏪ Reiniciar daqui</button>
+                <button id="btn-cancel-history-preview" class="btn btn-xs btn-ghost">Atual</button>
+              </div>
+            </div>
+            <div id="move-history-list" class="move-history-list"></div>
+          </div>
+
+          <!-- Bottom Player Card -->
+          <div id="card-white" class="player-card active-turn">
+            <div class="player-meta">
+              <div class="avatar avatar-white">♔</div>
+              <div class="player-info-col">
+                <div class="player-name-row">
+                  <span id="name-white" class="player-name">Você (Brancas)</span>
+                  <span id="presence-white" class="presence-pill hidden"></span>
+                </div>
+                <div id="lost-by-white" class="lost-row">Perdeu: 0 peças</div>
+                <div id="captured-by-white" class="captured-row"></div>
+              </div>
+            </div>
+            <div id="clock-white" class="clock">10:00</div>
+          </div>
+        </aside>
+      </main>
+    </div>
+
+    <!-- MODAL 1: New Game / Mode Selector -->
+    <div id="modal-new-game" class="modal hidden">
+      <div class="modal-card">
+        <div class="modal-header">
+          <h2>✦ Configurar Nova Partida</h2>
+          <button class="modal-close" data-close="modal-new-game">✕</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-row">
+            <label>Modo de Jogo</label>
+            <div class="mode-grid">
+              <button class="mode-option active" data-mode="bot">
+                <strong>🤖 Contra Bot IA</strong>
+                <small>5 níveis de dificuldade</small>
+              </button>
+              <button class="mode-option" data-mode="local">
+                <strong>👥 Local 2 Jogadores</strong>
+                <small>Mesmo dispositivo</small>
+              </button>
+              <button class="mode-option" data-mode="bot_vs_bot">
+                <strong>⚔ Bot vs Bot</strong>
+                <small>Assistir duelo da IA</small>
+              </button>
+            </div>
+          </div>
+
+          <div id="bot-options-group" class="form-row">
+            <label for="bot-level-select">Dificuldade do Bot</label>
+            <select id="bot-level-select" class="input">
+              <option value="1">Nível 1 — Aprendiz (~600 ELO)</option>
+              <option value="2">Nível 2 — Casual (~1000 ELO)</option>
+              <option value="3" selected>Nível 3 — Clube (~1400 ELO)</option>
+              <option value="4">Nível 4 — Mestre (~1800 ELO)</option>
+              <option value="5">Nível 5 — Grande Mestre (~2150 ELO)</option>
+            </select>
+            <small id="bot-level-desc" class="hint-text"></small>
+          </div>
+
+          <div class="form-grid-2">
+            <div class="form-row">
+              <label for="human-color-select">Sua Cor (vs Bot)</label>
+              <select id="human-color-select" class="input">
+                <option value="w" selected>Brancas (Começa)</option>
+                <option value="b">Pretas</option>
+                <option value="random">Aleatória</option>
+              </select>
+            </div>
+            <div class="form-row">
+              <label for="time-control-select">Controle de Tempo</label>
+              <select id="time-control-select" class="input">
+                <option value="180|2">Blitz 3+2</option>
+                <option value="300|0">Blitz 5+0</option>
+                <option value="600|0" selected>Rápido 10+0</option>
+                <option value="900|10">Clássico 15+10</option>
+                <option value="0|0">Sem Relógio</option>
+              </select>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-ghost" data-close="modal-new-game">Cancelar</button>
+          <button id="btn-start-match" class="btn btn-primary">Iniciar Partida</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- MODAL 2: 3D Piece Customization Studio -->
+    <div id="modal-piece-studio" class="modal hidden">
+      <div class="modal-card modal-wide">
+        <div class="modal-header">
+          <h2>🎨 Estúdio de Personalização 3D por Peça</h2>
+          <button class="modal-close" data-close="modal-piece-studio">✕</button>
+        </div>
+        <div class="studio-layout">
+          <!-- Left: Live 3D Piece Preview -->
+          <div class="studio-preview-col">
+            <canvas id="studio-preview-canvas" width="300" height="320"></canvas>
+            <div class="preview-side-toggle">
+              <button id="preview-white-btn" class="btn btn-xs btn-primary">Ver Branca</button>
+              <button id="preview-black-btn" class="btn btn-xs btn-ghost">Ver Preta</button>
+            </div>
+            <div class="studio-quick-actions">
+              <button id="btn-mix-styles" class="btn btn-xs btn-accent" title="Mistura estilos entre as peças automaticamente">🎲 Misturar Estilos</button>
+              <button id="btn-reset-pieces" class="btn btn-xs btn-danger">↺ Restaurar Padrão</button>
+            </div>
+          </div>
+
+          <!-- Right: Piece Selector & PBR Controls -->
+          <div class="studio-controls-col">
+            <div class="piece-tabs" id="studio-piece-tabs">
+              <button class="piece-tab active" data-piece="all">✨ Todas</button>
+              <button class="piece-tab" data-piece="k">♚ Rei</button>
+              <button class="piece-tab" data-piece="q">♛ Dama</button>
+              <button class="piece-tab" data-piece="r">♜ Torre</button>
+              <button class="piece-tab" data-piece="b">♝ Bispo</button>
+              <button class="piece-tab" data-piece="n">♞ Cavalo</button>
+              <button class="piece-tab" data-piece="p">♟ Peão</button>
+            </div>
+
+            <div class="form-grid-2">
+              <div class="form-row">
+                <label for="studio-style-select">Estilo de Geometria 3D</label>
+                <select id="studio-style-select" class="input"></select>
+              </div>
+              <div class="form-row">
+                <label for="studio-preset-select">Preset de Material PBR</label>
+                <select id="studio-preset-select" class="input"></select>
+              </div>
+            </div>
+
+            <div class="form-grid-3">
+              <div class="form-row">
+                <label for="studio-white-color">Cor Brancas</label>
+                <input id="studio-white-color" type="color" class="color-input" />
+              </div>
+              <div class="form-row">
+                <label for="studio-black-color">Cor Pretas</label>
+                <input id="studio-black-color" type="color" class="color-input" />
+              </div>
+              <div class="form-row">
+                <label for="studio-accent-color">Cor Detalhe / Neon</label>
+                <input id="studio-accent-color" type="color" class="color-input" />
+              </div>
+            </div>
+
+            <div class="sliders-grid">
+              <div class="slider-row">
+                <label>Metalicidade <span id="val-metalness" class="mono">0.20</span></label>
+                <input id="studio-metalness" type="range" min="0" max="1" step="0.02" />
+              </div>
+              <div class="slider-row">
+                <label>Rugosidade <span id="val-roughness" class="mono">0.20</span></label>
+                <input id="studio-roughness" type="range" min="0.02" max="1" step="0.02" />
+              </div>
+              <div class="slider-row">
+                <label>Brilho Emissivo (Neon) <span id="val-emissive" class="mono">0.20</span></label>
+                <input id="studio-emissive" type="range" min="0" max="2" step="0.05" />
+              </div>
+              <div class="slider-row">
+                <label>Translucidez (Cristal) <span id="val-transmission" class="mono">0.00</span></label>
+                <input id="studio-transmission" type="range" min="0" max="0.9" step="0.05" />
+              </div>
+              <div class="slider-row">
+                <label>Escala de Altura <span id="val-height" class="mono">1.00x</span></label>
+                <input id="studio-height" type="range" min="0.8" max="1.35" step="0.02" />
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button id="btn-apply-studio" class="btn btn-primary">✓ Aplicar no Tabuleiro 3D</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- MODAL 3: Online Lobby (Firebase + Multi-Tab Demo) -->
+    <div id="modal-online-lobby" class="modal hidden">
+      <div class="modal-card modal-wide">
+        <div class="modal-header">
+          <h2>🌐 Multiplayer Online</h2>
+          <button class="modal-close" data-close="modal-online-lobby">✕</button>
+        </div>
+        <div class="modal-body">
+          <div id="lobby-mode-banner" class="info-banner"></div>
+
+          <div class="lobby-grid">
+            <div class="lobby-box">
+              <h3>Criar Nova Sala</h3>
+              <div class="form-row">
+                <label for="online-player-name">Seu Nome</label>
+                <input id="online-player-name" type="text" class="input" placeholder="Ex: Mestre_JP" maxlength="20" />
+              </div>
+              <div class="form-grid-2">
+                <div class="form-row">
+                  <label for="online-color-select">Sua Cor</label>
+                  <select id="online-color-select" class="input">
+                    <option value="w">Brancas</option>
+                    <option value="b">Pretas</option>
+                    <option value="random">Aleatória</option>
+                  </select>
+                </div>
+                <div class="form-row">
+                  <label for="online-time-select">Tempo</label>
+                  <select id="online-time-select" class="input">
+                    <option value="180|2">3+2</option>
+                    <option value="600|0" selected>10+0</option>
+                    <option value="900|10">15+10</option>
+                    <option value="0|0">Sem limite</option>
+                  </select>
+                </div>
+              </div>
+              <button id="btn-create-room" class="btn btn-primary full-width">Criar Sala e Gerar Link</button>
+            </div>
+
+            <div class="lobby-box">
+              <h3>Entrar em Sala</h3>
+              <div class="form-row">
+                <label for="join-room-code">Código da Sala</label>
+                <div class="inline-input">
+                  <input id="join-room-code" type="text" class="input mono" placeholder="Ex: K7M9P2" maxlength="8" />
+                  <button id="btn-join-room" class="btn btn-accent">Entrar</button>
+                </div>
+              </div>
+              <div class="public-rooms-header">
+                <span>Salas Recentes</span>
+                <button id="btn-refresh-rooms" class="btn btn-xs btn-ghost">↻ Atualizar</button>
+              </div>
+              <div id="public-rooms-list" class="public-rooms-list"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- MODAL 4: Settings & Cloud Security -->
+    <div id="modal-firebase" class="modal hidden">
+      <div class="modal-card">
+        <div class="modal-header">
+          <h2>🔒 Configurações & Segurança Nuvem</h2>
+          <button class="modal-close" data-close="modal-firebase">✕</button>
+        </div>
+        <div class="modal-body">
+          <div class="settings-section">
+            <h3>Preferências da Partida</h3>
+            <div class="form-grid-2">
+              <div class="form-row">
+                <label for="settings-board-theme-select">Tema do Tabuleiro 3D</label>
+                <select id="settings-board-theme-select" class="input"></select>
+              </div>
+              <div class="form-row">
+                <label>Câmera & Áudio</label>
+                <div class="settings-toggles">
+                  <label class="toggle-chip">
+                    <input type="checkbox" id="chk-settings-sound" checked />
+                    <span>Efeitos Sonoros</span>
+                  </label>
+                  <label class="toggle-chip">
+                    <input type="checkbox" id="chk-settings-auto-flip" />
+                    <span>Auto-Giro Local</span>
+                  </label>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <hr class="modal-divider" />
+
+          <div class="settings-section">
+            <h3>Proteção do Servidor & Multiplayer Online</h3>
+            <div class="info-banner">
+              <strong>🔒 Credenciais Isoladas no Servidor:</strong> Todas as chaves e configurações do banco de dados
+              ficam protegidas exclusivamente em variáveis de ambiente do servidor (<code>/api/rooms</code>), nunca
+              expostas no navegador ou no código público.
+            </div>
+            <div id="firebase-status-msg" class="hint-text">Verificando conexão segura...</div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button id="btn-disconnect-firebase" class="btn btn-ghost">Usar Modo Demo Local</button>
+          <button id="btn-save-firebase" class="btn btn-primary">🔄 Conectar / Testar Nuvem</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- MODAL 5: Pawn Promotion -->
+    <div id="modal-promotion" class="modal hidden">
+      <div class="modal-card modal-compact">
+        <div class="modal-header">
+          <h2>♕ Promover Peão</h2>
+        </div>
+        <div class="promo-grid">
+          <button class="promo-btn" data-promo="q">♕<span>Dama</span></button>
+          <button class="promo-btn" data-promo="r">♖<span>Torre</span></button>
+          <button class="promo-btn" data-promo="b">♗<span>Bispo</span></button>
+          <button class="promo-btn" data-promo="n">♘<span>Cavalo</span></button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Toast Container -->
+    <div id="toast-container" class="toast-container"></div>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
