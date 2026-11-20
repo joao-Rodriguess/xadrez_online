@@ -10,6 +10,8 @@ import {
 } from './pieceBuilder3D.js';
 import {
   BOT_LEVELS,
+  TACTICAL_PUZZLES,
+  classifyMoveQuality,
   getBestMove,
   evaluateBoardScore,
   isGameCheck,
@@ -32,7 +34,14 @@ class ChessRoyaleApp {
     this.chess = new Chess();
     this.multiplayer = new MultiplayerManager();
 
-    this.gameMode = 'bot'; // 'bot' | 'local' | 'bot_vs_bot' | 'online'
+    this.gameMode = 'bot'; // 'bot' | 'local' | 'bot_vs_bot' | 'online' | 'puzzle'
+    this.variant = 'standard'; // 'standard' | 'koth' | 'three_check'
+    this.checksCount = { w: 0, b: 0 };
+    this.showThreatMap = false;
+    this.puzzleIndex = 0;
+    this.currentPuzzle = null;
+    this.evalHistory = [0.1];
+    this.lastClockAlertSec = { w: -1, b: -1 };
     this.botLevel = 3;
     this.humanColor = 'w';
     this.selectedSquare = null;
@@ -55,6 +64,7 @@ class ChessRoyaleApp {
     this._serverClockOffsetMs = 0;
     this.lastGameConfig = {
       mode: 'bot',
+      variant: 'standard',
       botLevel: 3,
       humanColor: 'w',
       timeControl: { initialSeconds: 600, incrementSeconds: 0 },
@@ -174,14 +184,18 @@ class ChessRoyaleApp {
     document.getElementById('btn-online-lobby').addEventListener('click', () => this._openOnlineLobby());
     document.getElementById('btn-firebase-config').addEventListener('click', () => this._openFirebaseModal());
 
-    // Main Menu 6 Action Cards
+    // Main Menu 8 Action Cards
     document.querySelectorAll('[data-menu-action]').forEach((card) => {
       card.addEventListener('click', () => {
         const act = card.dataset.menuAction;
         if (act === 'bot' || act === 'local' || act === 'bot_vs_bot') {
           this._openNewGameModal(act);
+        } else if (act === 'quick_online') {
+          this._startQuickMatch();
         } else if (act === 'online') {
           this._openOnlineLobby();
+        } else if (act === 'puzzles') {
+          this._startPuzzleMode(this.puzzleIndex);
         } else if (act === 'studio') {
           this._openPieceStudio();
         } else if (act === 'settings') {
@@ -190,11 +204,39 @@ class ChessRoyaleApp {
       });
     });
 
+    // Threat Map 3D toggle, Copy PGN, Puzzle Controls, Quick Match & Eval Chart Navigation
+    document.getElementById('btn-threat-map').addEventListener('click', () => {
+      this.showThreatMap = !this.showThreatMap;
+      document.getElementById('btn-threat-map').classList.toggle('active', this.showThreatMap);
+      this._renderHighlights();
+      this._toast(this.showThreatMap ? '🛡 Mapa de Ameaças 3D ativado!' : 'Mapa de Ameaças desativado.');
+    });
+    document.getElementById('btn-copy-pgn').addEventListener('click', () => this._copyPgnAndFen());
+    document.getElementById('btn-puzzle-hint').addEventListener('click', () => this._showPuzzleHint());
+    document.getElementById('btn-puzzle-next').addEventListener('click', () => {
+      this._startPuzzleMode((this.puzzleIndex + 1) % TACTICAL_PUZZLES.length);
+    });
+    document.getElementById('btn-quick-match').addEventListener('click', () => this._startQuickMatch());
+
+    document.getElementById('eval-chart-canvas').addEventListener('click', (e) => {
+      if (this.moveSnapshots.length <= 1) return;
+      const rect = e.target.getBoundingClientRect();
+      const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+      const targetPly = Math.round(ratio * (this.moveSnapshots.length - 1));
+      if (targetPly === this.moveSnapshots.length - 1) {
+        this._cancelHistoryPreview();
+      } else {
+        this._previewHistoryPly(targetPly);
+      }
+    });
+
     // Game Over Overlay actions
     document.getElementById('btn-gameover-rematch').addEventListener('click', () => {
       if (this.gameMode === 'online') {
         this.multiplayer.requestRematch();
         this._toast('Pedido de revanche enviado!');
+      } else if (this.gameMode === 'puzzle') {
+        this._startPuzzleMode((this.puzzleIndex + 1) % TACTICAL_PUZZLES.length);
       } else {
         this._startLocalOrBotGame(this.lastGameConfig);
       }
@@ -255,9 +297,11 @@ class ChessRoyaleApp {
     document.getElementById('btn-start-match').addEventListener('click', () => {
       const lvl = Number(botSelect.value);
       const colorPref = document.getElementById('human-color-select').value;
+      const variant = document.getElementById('variant-select')?.value || 'standard';
       const [secStr, incStr] = document.getElementById('time-control-select').value.split('|');
       this._startLocalOrBotGame({
         mode: this.selectedNewGameMode,
+        variant,
         botLevel: lvl,
         humanColor: colorPref === 'random' ? (Math.random() < 0.5 ? 'w' : 'b') : colorPref,
         timeControl: { initialSeconds: Number(secStr), incrementSeconds: Number(incStr) },
@@ -476,12 +520,16 @@ class ChessRoyaleApp {
 
   _enterOnlineRoom(roomId, myColor, initialRoom) {
     this.gameMode = 'online';
+    this.variant = 'standard';
+    this.checksCount = { w: 0, b: 0 };
+    this.currentPuzzle = null;
     this.humanColor = myColor === 'b' ? 'b' : 'w';
     this.selectedSquare = null;
     this.legalMoves = [];
     this.hintMove = null;
     this.gameEnded = false;
     this.hasActiveMatch = true;
+    this.evalHistory = [0.1];
     this._hideGameOver();
     this._hideMainMenu();
     this._resetSnapshots();
@@ -491,6 +539,8 @@ class ChessRoyaleApp {
     url.searchParams.set('room', roomId);
     window.history.replaceState({}, '', url.toString());
 
+    document.getElementById('puzzle-banner').classList.add('hidden');
+    document.getElementById('move-quality-badge').classList.add('hidden');
     document.getElementById('online-panel').classList.remove('hidden');
     document.getElementById('room-code-display').textContent = roomId;
     document.getElementById('btn-draw').classList.remove('hidden');
@@ -597,22 +647,27 @@ class ChessRoyaleApp {
     );
   }
 
-  _startLocalOrBotGame({ mode, botLevel, humanColor, timeControl }) {
+  _startLocalOrBotGame({ mode, variant = 'standard', botLevel, humanColor, timeControl }) {
     this.multiplayer.leaveRoom();
     const url = new URL(window.location.href);
     url.searchParams.delete('room');
     window.history.replaceState({}, '', url.toString());
 
     document.getElementById('online-panel').classList.add('hidden');
+    document.getElementById('puzzle-banner').classList.add('hidden');
     document.getElementById('btn-draw').classList.add('hidden');
     document.getElementById('btn-undo').classList.remove('hidden');
 
     this.gameMode = mode;
+    this.variant = variant || 'standard';
+    this.checksCount = { w: 0, b: 0 };
+    this.currentPuzzle = null;
     this.botLevel = botLevel || 3;
     this.humanColor = humanColor || 'w';
     this.timeControl = timeControl || { initialSeconds: 600, incrementSeconds: 0 };
     this.lastGameConfig = {
       mode: this.gameMode,
+      variant: this.variant,
       botLevel: this.botLevel,
       humanColor: this.humanColor,
       timeControl: this.timeControl,
@@ -623,9 +678,12 @@ class ChessRoyaleApp {
 
     const initMs = this.timeControl.initialSeconds * 1000;
     this.clocks = { w: initMs, b: initMs };
+    this.lastClockAlertSec = { w: -1, b: -1 };
     this.lastClockTick = Date.now();
 
     this.chess.reset();
+    this.evalHistory = [evaluateBoardScore(this.chess.fen()).pawns || 0];
+    document.getElementById('move-quality-badge').classList.add('hidden');
     this.selectedSquare = null;
     this.legalMoves = [];
     this.lastMove = null;
@@ -643,6 +701,11 @@ class ChessRoyaleApp {
     this.scene3d.setCameraView(mode === 'bot' ? this.humanColor : 'w');
     this._updateConnectionBadge();
     this._renderAll();
+
+    if (mode === 'bot' && BOT_LEVELS[this.botLevel]?.chatLines?.start) {
+      const bot = BOT_LEVELS[this.botLevel];
+      this._toast(`🤖 ${bot.shortName}: "${bot.chatLines.start}"`);
+    }
     this._maybeTriggerBotTurn();
   }
 
@@ -723,6 +786,7 @@ class ChessRoyaleApp {
   }
 
   async _commitMove(moveObj) {
+    const prevEvalPawns = this.evalHistory[this.evalHistory.length - 1] ?? 0;
     const moverColor = this.chess.turn();
     const result = this.chess.move(moveObj);
     if (!result) return;
@@ -738,6 +802,43 @@ class ChessRoyaleApp {
     this.historyPreviewPly = null;
     this.lastMove = { from: result.from, to: result.to, san: result.san };
     this._pushMoveSnapshot(result);
+
+    const nextEvalScore = evaluateBoardScore(this.chess.fen());
+    const nextEvalPawns = nextEvalScore.mateIn === 0 ? (nextEvalScore.winner === 'w' ? 15 : -15) : nextEvalScore.pawns;
+    this.evalHistory.push(nextEvalPawns);
+
+    // Tactical move quality badge for human moves (and bot personality reactions)
+    const isHumanMove =
+      this.gameMode === 'local' ||
+      this.gameMode === 'puzzle' ||
+      (this.gameMode === 'bot' && moverColor === this.humanColor) ||
+      (this.gameMode === 'online' && moverColor === this.multiplayer.myColor);
+
+    const qualityEl = document.getElementById('move-quality-badge');
+    if (isHumanMove && this.gameMode !== 'puzzle') {
+      const q = classifyMoveQuality(
+        prevEvalPawns,
+        nextEvalPawns,
+        moverColor,
+        isGameCheckmate(this.chess),
+        Boolean(result.captured)
+      );
+      qualityEl.textContent = `${q.symbol} ${q.label}`;
+      qualityEl.className = `quality-badge ${q.cssClass}`;
+      if (this.gameMode === 'bot' && (q.symbol === '!!' || q.symbol === '??')) {
+        const bot = BOT_LEVELS[this.botLevel];
+        if (q.symbol === '!!' && bot?.chatLines?.blunder) {
+          this._toast(`🤖 ${bot.shortName}: "${bot.chatLines.blunder}"`);
+        }
+      }
+    } else if (this.gameMode === 'bot' && moverColor !== this.humanColor) {
+      const bot = BOT_LEVELS[this.botLevel];
+      if (isGameCheck(this.chess) && bot?.chatLines?.check) {
+        this._toast(`🤖 ${bot.shortName}: "${bot.chatLines.check}"`);
+      } else if (result.captured && Math.random() < 0.45 && bot?.chatLines?.capture) {
+        this._toast(`🤖 ${bot.shortName}: "${bot.chatLines.capture}"`);
+      }
+    }
 
     // Determine special 3D animation hints (castling rook / en passant)
     const animInfo = {
@@ -759,20 +860,72 @@ class ChessRoyaleApp {
 
     this.scene3d.syncBoard(this.chess.board(), this.customization, animInfo);
 
-    // Sound FX & Game Over Card
-    if (isGameOver(this.chess)) {
+    // Check variant win conditions (King of the Hill & Three-Check)
+    const inCheckNow = isGameCheck(this.chess);
+    if (inCheckNow && this.variant === 'three_check') {
+      this.checksCount[moverColor]++;
+    }
+    const isKothWin =
+      this.variant === 'koth' &&
+      result.piece === 'k' &&
+      ['d4', 'e4', 'd5', 'e5'].includes(result.to);
+    const isThreeCheckWin = this.variant === 'three_check' && this.checksCount[moverColor] >= 3;
+
+    // Puzzle mode evaluation
+    if (this.gameMode === 'puzzle' && this.currentPuzzle) {
+      const expected = this.currentPuzzle.solution[0];
+      const solved = result.san === expected || isGameCheckmate(this.chess);
+      if (solved) {
+        this.gameEnded = true;
+        audioFX.playPromote();
+        this._updateTurnBanner(`🧩 Puzzle Resolvido! Lance exato: ${result.san}`);
+        this._toast(`✅ Excelente! "${this.currentPuzzle.title}" resolvido!`);
+        this._renderAll();
+        setTimeout(() => {
+          if (this.gameMode === 'puzzle' && !this.isInMenu) {
+            this._startPuzzleMode((this.puzzleIndex + 1) % TACTICAL_PUZZLES.length);
+          }
+        }, 1800);
+        return;
+      }
+      audioFX.playCheck();
+      this._toast(`⚠ Quase! "${result.san}" não é a solução ideal. Tente novamente.`);
+      this._renderAll();
+      setTimeout(() => {
+        if (this.gameMode === 'puzzle') {
+          this.chess.undo();
+          this.moveSnapshots.pop();
+          this.evalHistory.pop();
+          this.lastMove = null;
+          this.scene3d.rebuildAllPieces(this.chess.board(), this.customization);
+          this._renderAll();
+        }
+      }, 750);
+      return;
+    }
+
+    // Sound FX, Fallen King Animation & Game Over Card
+    if (isGameOver(this.chess) || isKothWin || isThreeCheckWin) {
       this.gameEnded = true;
       const isMate = isGameCheckmate(this.chess);
-      audioFX.playGameOver(isMate);
+      audioFX.playGameOver(isMate || isKothWin || isThreeCheckWin);
+      if (isMate) {
+        const defeatedKingSq = this._findKingSquare(this.chess.turn());
+        setTimeout(() => this.scene3d.triggerCheckmateFall(defeatedKingSq), 380);
+      }
       if (this.gameMode !== 'online') {
-        if (isMate) {
-          const winner = moverColor === 'w' ? 'Brancas' : 'Pretas';
+        const winner = moverColor === 'w' ? 'Brancas' : 'Pretas';
+        if (isKothWin) {
+          this._showGameOver(`Vitória das ${winner}!`, 'Rei da Colina (Centro dominado!)');
+        } else if (isThreeCheckWin) {
+          this._showGameOver(`Vitória das ${winner}!`, '3-Xeques aplicados!');
+        } else if (isMate) {
           this._showGameOver(`Vitória das ${winner}!`, 'Xeque-mate');
         } else {
           this._showGameOver('Empate!', 'Partida empatada pelas regras');
         }
       }
-    } else if (isGameCheck(this.chess)) {
+    } else if (inCheckNow) {
       audioFX.playCheck();
     } else if (result.promotion) {
       audioFX.playPromote();
@@ -791,12 +944,16 @@ class ChessRoyaleApp {
 
     this._renderAll();
 
-    // Sync to Firebase / Demo channel if online
+    // Sync to server / Demo channel if online
     if (this.gameMode === 'online') {
       const nextHistory = [...(this._onlineMovesList || []), result.san];
       let gameResult = null;
       if (isGameCheckmate(this.chess)) {
         gameResult = { winner: moverColor, reason: 'Xeque-mate' };
+      } else if (isKothWin) {
+        gameResult = { winner: moverColor, reason: 'Rei da Colina' };
+      } else if (isThreeCheckWin) {
+        gameResult = { winner: moverColor, reason: '3-Xeques' };
       } else if (isGameDraw(this.chess)) {
         gameResult = { winner: 'draw', reason: 'Empate' };
       }
@@ -934,25 +1091,80 @@ class ChessRoyaleApp {
   }
 
   _renderClocks() {
-    document.getElementById('clock-white').textContent = this._formatClock(this.clocks.w);
-    document.getElementById('clock-black').textContent = this._formatClock(this.clocks.b);
+    const wEl = document.getElementById('clock-white');
+    const bEl = document.getElementById('clock-black');
+    wEl.textContent = this._formatClock(this.clocks.w);
+    bEl.textContent = this._formatClock(this.clocks.b);
+
+    const hasTimer = this.timeControl.initialSeconds > 0 && !this.gameEnded && this.hasActiveMatch && !this.isInMenu;
+    const wUrgent = hasTimer && this.clocks.w > 0 && this.clocks.w <= 20000;
+    const bUrgent = hasTimer && this.clocks.b > 0 && this.clocks.b <= 20000;
+    wEl.classList.toggle('clock-urgent', wUrgent);
+    bEl.classList.toggle('clock-urgent', bUrgent);
+
+    const turn = this.chess.turn();
+    if (hasTimer && this.clocks[turn] <= 20000 && this.clocks[turn] > 0) {
+      const secLeft = Math.ceil(this.clocks[turn] / 1000);
+      if (this.lastClockAlertSec[turn] !== secLeft) {
+        this.lastClockAlertSec[turn] = secLeft;
+        audioFX.playClockTick(secLeft <= 10);
+      }
+    }
   }
 
-  _renderHighlights() {
-    let checkSquare = null;
-    if (isGameCheck(this.chess)) {
-      const turn = this.chess.turn();
-      const board = this.chess.board();
-      const files = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
-      for (let r = 0; r < 8; r++) {
-        for (let f = 0; f < 8; f++) {
-          const cell = board[r][f];
-          if (cell && cell.type === 'k' && cell.color === turn) {
-            checkSquare = `${files[f]}${8 - r}`;
-          }
+  _findKingSquare(color) {
+    const board = this.chess.board();
+    const files = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
+    for (let r = 0; r < 8; r++) {
+      for (let f = 0; f < 8; f++) {
+        const cell = board[r][f];
+        if (cell && cell.type === 'k' && cell.color === color) {
+          return `${files[f]}${8 - r}`;
         }
       }
     }
+    return null;
+  }
+
+  _computeThreatMap() {
+    if (!this.showThreatMap) return null;
+    const perspective = this.gameMode === 'bot' || this.gameMode === 'online' ? this.humanColor : this.chess.turn();
+    const opponent = perspective === 'w' ? 'b' : 'w';
+    const fenParts = this.chess.fen().split(' ');
+
+    const getControlled = (side) => {
+      const set = new Set();
+      try {
+        const f = `${fenParts[0]} ${side} - - 0 1`;
+        const tmp = new Chess(f);
+        for (const m of tmp.moves({ verbose: true })) {
+          set.add(m.to);
+        }
+      } catch {
+        // fallback if side in check prevents full move gen
+      }
+      return set;
+    };
+
+    const mine = getControlled(perspective);
+    const enemy = getControlled(opponent);
+    const map = {};
+    const files = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
+    for (const file of files) {
+      for (let rank = 1; rank <= 8; rank++) {
+        const sq = `${file}${rank}`;
+        const hasMine = mine.has(sq);
+        const hasEnemy = enemy.has(sq);
+        if (hasMine && hasEnemy) map[sq] = 'contested';
+        else if (hasEnemy) map[sq] = 'danger';
+        else if (hasMine) map[sq] = 'safe';
+      }
+    }
+    return map;
+  }
+
+  _renderHighlights() {
+    const checkSquare = isGameCheck(this.chess) ? this._findKingSquare(this.chess.turn()) : null;
 
     this.scene3d.updateHighlights({
       selectedSquare: this.selectedSquare,
@@ -960,6 +1172,8 @@ class ChessRoyaleApp {
       lastMove: this.lastMove,
       checkSquare,
       hintMove: this.hintMove,
+      kothMode: this.variant === 'koth',
+      threatMap: this._computeThreatMap(),
     });
   }
 
@@ -969,7 +1183,148 @@ class ChessRoyaleApp {
     this._renderPlayerCards();
     this._renderMoveHistory();
     this._renderEvalBar();
+    this._renderEvalChart();
     this._updateTurnBanner();
+  }
+
+  _renderEvalChart() {
+    const canvas = document.getElementById('eval-chart-canvas');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const w = canvas.width;
+    const h = canvas.height;
+    ctx.clearRect(0, 0, w, h);
+
+    ctx.fillStyle = '#070b13';
+    ctx.fillRect(0, 0, w, h);
+
+    // Midline (0.0)
+    ctx.strokeStyle = 'rgba(148, 163, 184, 0.25)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(0, h / 2);
+    ctx.lineTo(w, h / 2);
+    ctx.stroke();
+
+    const data = this.evalHistory.length > 0 ? this.evalHistory : [0];
+    if (data.length === 1) return;
+
+    const toY = (val) => {
+      const clamped = Math.max(-8, Math.min(8, val));
+      return h / 2 - (clamped / 8) * (h * 0.44);
+    };
+
+    // Area fill under curve
+    ctx.beginPath();
+    ctx.moveTo(0, h / 2);
+    data.forEach((v, idx) => {
+      const x = (idx / (data.length - 1)) * w;
+      ctx.lineTo(x, toY(v));
+    });
+    ctx.lineTo(w, h / 2);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(56, 189, 248, 0.22)';
+    ctx.fill();
+
+    // Advantage curve line
+    ctx.beginPath();
+    data.forEach((v, idx) => {
+      const x = (idx / (data.length - 1)) * w;
+      const y = toY(v);
+      if (idx === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    });
+    ctx.strokeStyle = '#38bdf8';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // Preview cursor if browsing history
+    if (this.historyPreviewPly !== null && this.historyPreviewPly < data.length) {
+      const px = (this.historyPreviewPly / (data.length - 1)) * w;
+      const py = toY(data[this.historyPreviewPly]);
+      ctx.fillStyle = '#fbbf24';
+      ctx.beginPath();
+      ctx.arc(px, py, 3.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  async _startQuickMatch() {
+    try {
+      this._toast('⚡ Procurando partida rápida na nuvem...');
+      const res = await this.multiplayer.quickMatch({
+        playerName: this._getLocalPlayerName(),
+        timeControlSeconds: 600,
+        incrementSeconds: 0,
+        pieceCustomization: this.customization,
+      });
+      this._enterOnlineRoom(res.roomId, res.myColor, res.room);
+      this._closeModal('modal-online-lobby');
+      this._toast(
+        res.matched
+          ? `⚡ Oponente encontrado na sala ${res.roomId}!`
+          : `⚡ Sala rápida ${res.roomId} criada! Aguardando próximo jogador.`
+      );
+    } catch (err) {
+      this._toast(`Erro no Matchmaking: ${err.message}`);
+    }
+  }
+
+  _startPuzzleMode(idx = 0) {
+    this.multiplayer.leaveRoom();
+    this.puzzleIndex = idx % TACTICAL_PUZZLES.length;
+    const puz = TACTICAL_PUZZLES[this.puzzleIndex];
+    this.currentPuzzle = puz;
+    this.gameMode = 'puzzle';
+    this.variant = 'standard';
+    this.humanColor = puz.playerColor;
+    this.timeControl = { initialSeconds: 0, incrementSeconds: 0 };
+    this.hasActiveMatch = true;
+    this.gameEnded = false;
+    this.selectedSquare = null;
+    this.legalMoves = [];
+    this.lastMove = null;
+    this.hintMove = null;
+    this.historyPreviewPly = null;
+    this._onlineMovesList = null;
+    this._onlineRoomSnapshot = null;
+
+    this.chess.load(puz.fen);
+    this.evalHistory = [evaluateBoardScore(this.chess.fen()).pawns || 0];
+    this._resetSnapshots();
+    this.moveSnapshots[0].fen = puz.fen;
+
+    document.getElementById('online-panel').classList.add('hidden');
+    document.getElementById('btn-draw').classList.add('hidden');
+    document.getElementById('btn-undo').classList.add('hidden');
+    document.getElementById('move-quality-badge').classList.add('hidden');
+    document.getElementById('puzzle-banner').classList.remove('hidden');
+    document.getElementById('puzzle-title').textContent = `${this.puzzleIndex + 1}/${TACTICAL_PUZZLES.length}: ${puz.title}`;
+    document.getElementById('puzzle-theme').textContent = puz.theme;
+
+    this._hideGameOver();
+    this._hideMainMenu();
+    this.scene3d.rebuildAllPieces(this.chess.board(), this.customization);
+    this.scene3d.setCameraView(puz.playerColor);
+    this._updateConnectionBadge();
+    this._renderAll();
+    this._toast(`🧩 ${puz.title} (${puz.theme}) — Sua vez!`);
+  }
+
+  _showPuzzleHint() {
+    if (!this.currentPuzzle) return;
+    this._toast(`💡 Dica: ${this.currentPuzzle.hint}`);
+    this._requestHint();
+  }
+
+  _copyPgnAndFen() {
+    const pgn = this.chess.pgn() || '(Sem lances ainda)';
+    const fen = this.chess.fen();
+    const text = `PGN:\n${pgn}\n\nFEN:\n${fen}`;
+    navigator.clipboard?.writeText(text).then(
+      () => this._toast('📋 PGN e FEN copiados para a área de transferência!'),
+      () => this._toast(`FEN: ${fen}`)
+    );
   }
 
   _renderPlayerCards() {
@@ -993,12 +1348,27 @@ class ChessRoyaleApp {
       const lvl = BOT_LEVELS[this.botLevel];
       wNameEl.textContent = `IA Brancas (${lvl.name})`;
       bNameEl.textContent = `IA Pretas (${lvl.name})`;
+    } else if (this.gameMode === 'puzzle' && this.currentPuzzle) {
+      wNameEl.textContent = this.humanColor === 'w' ? 'Você (Desafio Tático)' : 'Posição do Desafio';
+      bNameEl.textContent = this.humanColor === 'b' ? 'Você (Desafio Tático)' : 'Posição do Desafio';
     } else if (this.gameMode === 'online' && this._onlineRoomSnapshot) {
       wNameEl.textContent = this._onlineRoomSnapshot.white?.name || 'Aguardando Brancas...';
       bNameEl.textContent = this._onlineRoomSnapshot.black?.name || 'Aguardando Pretas...';
     } else {
       wNameEl.textContent = 'Jogador Brancas';
       bNameEl.textContent = 'Jogador Pretas';
+    }
+
+    const wChecksEl = document.getElementById('checks-white');
+    const bChecksEl = document.getElementById('checks-black');
+    if (this.variant === 'three_check') {
+      wChecksEl.classList.remove('hidden');
+      bChecksEl.classList.remove('hidden');
+      wChecksEl.textContent = `${this.checksCount.w}/3 ♔`;
+      bChecksEl.textContent = `${this.checksCount.b}/3 ♚`;
+    } else {
+      wChecksEl.classList.add('hidden');
+      bChecksEl.classList.add('hidden');
     }
 
     // Captured & Lost pieces calculation from starting counts
@@ -1216,9 +1586,12 @@ class ChessRoyaleApp {
   _rebuildSnapshotsFromSanList(sanList) {
     const tmp = new Chess();
     const list = [{ ply: 0, san: 'Início', fen: tmp.fen(), lastMove: null, clocks: { ...this.clocks } }];
+    const evals = [0.1];
     for (let i = 0; i < sanList.length; i++) {
       const mv = tmp.move(sanList[i]);
       if (!mv) break;
+      const sc = evaluateBoardScore(tmp.fen());
+      evals.push(sc.mateIn === 0 ? (sc.winner === 'w' ? 15 : -15) : sc.pawns);
       list.push({
         ply: i + 1,
         san: mv.san,
@@ -1230,6 +1603,7 @@ class ChessRoyaleApp {
       });
     }
     this.moveSnapshots = list;
+    this.evalHistory = evals;
   }
 
   _previewHistoryPly(ply) {
@@ -1244,9 +1618,11 @@ class ChessRoyaleApp {
       lastMove: snap.lastMove,
       checkSquare: null,
       hintMove: null,
+      kothMode: this.variant === 'koth',
     });
     this._renderPlayerCards();
     this._renderMoveHistory();
+    this._renderEvalChart();
     this._updateTurnBanner(`Visualizando Lance #${ply} (${snap.san}) — clique em "Reiniciar daqui" para jogar deste ponto`);
   }
 

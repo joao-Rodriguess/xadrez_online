@@ -129,9 +129,17 @@ O motor de IA opera sobre as regras oficiais (via `chess.js`) de forma assíncro
 
 ---
 
+## 6. Expansão 2.0 (+200%) Implementada
+- **Direção Cinematográfica & Física de Xeque-Mate:** Queda do Rei derrotado a `75°` com onda de choque dupla e câmera dramática (`triggerCheckmateFall`), partículas ambientais por tema (`ambientParticles`), altar dourado de *Rei da Colina* e **Mapa de Ameaças 3D** em tempo real.
+- **Mestres IA com Personalidades & Classificador Tático:** 5 personalidades (Sofia, Lucas, Viktor, Mikhail e Aegis GM) com reações no chat, selos de qualidade por lance (`!!`, `!`, `✓`, `?!`, `??`) e **Gráfico Interativo de Vantagem** para navegação no histórico.
+- **Desafios Táticos 3D & Variantes:** Modo de **Puzzles Táticos 3D**, variantes **Rei da Colina (KOTH)** e **3-Xeques**, além de **Partida Rápida Online (Matchmaking automático)** em `/api/rooms`.
+- **Feedback Sensorial Mobile & Exportação:** Vibração háptica (`navigator.vibrate`), tique-taque de relógio abaixo de 20s e exportação PGN/FEN em 1 clique.
+
+---
+
 ## 5. Prompt Mestre de Desenvolvimento (Texto Completo Reutilizável)
 
-> Abaixo está um **Prompt Mestre** pronto para uso em apresentações, documentação de engenharia ou geração de sistemas similares:
+> Abaixo está um **Prompt Mestre** pronto para uso em apresentações, documentações ou geração assistida por IA:
 
 ```text
 Atue como um Arquiteto de Software Sênior e Engenheiro de Gráficos 3D WebGL. Desenvolva um jogo de xadrez 3D de nível profissional ("Chess 3D Royale") utilizando Vite, Three.js, chess.js e Firebase Realtime Database.

@@ -325,6 +325,54 @@ export class MultiplayerManager {
     return { roomId: code, myColor: assignedColor, room };
   }
 
+  async quickMatch({ playerName, timeControlSeconds = 600, incrementSeconds = 0, pieceCustomization = null }) {
+    if (this.mode === 'cloud') {
+      try {
+        const res = await this._apiCall('quickMatch', {
+          playerId: this.playerId,
+          playerName,
+          timeControlSeconds,
+          incrementSeconds,
+          pieceCustomization,
+        });
+        this.cloudReady = true;
+        this.currentRoomId = res.roomId;
+        this.myColor = res.myColor;
+        return { matched: Boolean(res.matched), roomId: res.roomId, myColor: res.myColor, room: res.room };
+      } catch (err) {
+        if (err.message?.includes('FIREBASE_CONFIG_JSON')) {
+          this.mode = 'demo';
+        } else {
+          throw err;
+        }
+      }
+    }
+
+    const cutoff = Date.now() - 1000 * 60 * 30;
+    const waiting = Object.values(this._readDemoRooms()).filter(
+      (r) =>
+        r &&
+        r.roomId &&
+        r.status === 'waiting' &&
+        (!r.createdAt || r.createdAt > cutoff) &&
+        r.white?.uid !== this.playerId &&
+        r.black?.uid !== this.playerId &&
+        (!r.white || !r.black)
+    );
+    if (waiting.length > 0) {
+      const joined = await this.joinRoom(waiting[0].roomId, { playerName, pieceCustomization });
+      return { matched: true, ...joined };
+    }
+    const created = await this.createRoom({
+      playerName,
+      timeControlSeconds,
+      incrementSeconds,
+      preferredColor: 'w',
+      pieceCustomization,
+    });
+    return { matched: false, ...created };
+  }
+
   async listPublicRooms() {
     if (this.mode === 'cloud') {
       try {

@@ -228,13 +228,15 @@ export class Scene3D {
     this.ghostGroup = new THREE.Group();
     this.particlesGroup = new THREE.Group();
     this.effectsGroup = new THREE.Group();
+    this.ambientGroup = new THREE.Group();
     this.scene.add(
       this.boardGroup,
       this.piecesGroup,
       this.markersGroup,
       this.ghostGroup,
       this.particlesGroup,
-      this.effectsGroup
+      this.effectsGroup,
+      this.ambientGroup
     );
 
     this.squareMeshes = new Map();
@@ -242,6 +244,7 @@ export class Scene3D {
     this.activeAnimations = [];
     this.particles = [];
     this.shockwaves = [];
+    this.fallAnimation = null;
     this.cameraGoal = null;
     this.menuOrbit = false;
     this._menuOrbitAngle = 0.65;
@@ -407,6 +410,37 @@ export class Scene3D {
     floor.position.y = -0.44;
     floor.receiveShadow = true;
     this.boardGroup.add(floor);
+
+    this._buildAmbientParticles(theme.frameAccent || '#38bdf8');
+  }
+
+  _buildAmbientParticles(accentHex) {
+    while (this.ambientGroup.children.length > 0) {
+      const c = this.ambientGroup.children[0];
+      this.ambientGroup.remove(c);
+      c.geometry?.dispose();
+      c.material?.dispose();
+    }
+    const count = 48;
+    const positions = new Float32Array(count * 3);
+    for (let i = 0; i < count; i++) {
+      const angle = (i / count) * Math.PI * 2 + Math.random() * 0.4;
+      const radius = 5.2 + Math.random() * 5.2;
+      positions[i * 3] = Math.cos(angle) * radius;
+      positions[i * 3 + 1] = 0.2 + Math.random() * 4.2;
+      positions[i * 3 + 2] = Math.sin(angle) * radius;
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    const mat = new THREE.PointsMaterial({
+      color: accentHex,
+      size: 0.08,
+      transparent: true,
+      opacity: 0.55,
+      depthWrite: false,
+    });
+    const points = new THREE.Points(geo, mat);
+    this.ambientGroup.add(points);
   }
 
   setBoardTheme(themeId) {
@@ -801,6 +835,7 @@ export class Scene3D {
     this.lastBoardMatrix = boardMatrix;
     this.lastCustomization = customization;
     this.activeAnimations = [];
+    this.fallAnimation = null;
     while (this.piecesGroup.children.length > 0) {
       this.piecesGroup.remove(this.piecesGroup.children[0]);
     }
@@ -822,7 +857,15 @@ export class Scene3D {
     }
   }
 
-  updateHighlights({ selectedSquare, legalMoves = [], lastMove = null, checkSquare = null, hintMove = null }) {
+  updateHighlights({
+    selectedSquare,
+    legalMoves = [],
+    lastMove = null,
+    checkSquare = null,
+    hintMove = null,
+    kothMode = false,
+    threatMap = null,
+  }) {
     this.selectedSquare = selectedSquare;
     this.legalMoveTargets.clear();
     for (const mv of legalMoves) {
@@ -851,6 +894,35 @@ export class Scene3D {
       if (hintMove && (sq === hintMove.from || sq === hintMove.to)) {
         mesh.material.emissive.set('#a855f7');
         mesh.material.emissiveIntensity = 0.68;
+      }
+      if (threatMap && threatMap[sq]) {
+        const tm = threatMap[sq];
+        if (tm === 'danger') {
+          mesh.material.emissive.set('#f97316');
+          mesh.material.emissiveIntensity = Math.max(mesh.material.emissiveIntensity, 0.34);
+        } else if (tm === 'safe') {
+          mesh.material.emissive.set('#0284c7');
+          mesh.material.emissiveIntensity = Math.max(mesh.material.emissiveIntensity, 0.24);
+        } else if (tm === 'contested') {
+          mesh.material.emissive.set('#a855f7');
+          mesh.material.emissiveIntensity = Math.max(mesh.material.emissiveIntensity, 0.32);
+        }
+      }
+    }
+
+    // King of the Hill golden altar highlights (d4, e4, d5, e5)
+    if (kothMode) {
+      for (const hillSq of ['d4', 'e4', 'd5', 'e5']) {
+        const { x, z } = squareToCoords(hillSq);
+        const hillPad = new THREE.Mesh(
+          new THREE.RingGeometry(0.38, 0.46, 4),
+          new THREE.MeshBasicMaterial({ color: '#fbbf24', side: THREE.DoubleSide, transparent: true, opacity: 0.85 })
+        );
+        hillPad.rotation.x = -Math.PI / 2;
+        hillPad.rotation.z = Math.PI / 4;
+        hillPad.position.set(x, 0.012, z);
+        hillPad.userData.pulse = true;
+        this.markersGroup.add(hillPad);
       }
     }
 
@@ -1107,6 +1179,28 @@ export class Scene3D {
     this.shockwaves.push(ring);
   }
 
+  triggerCheckmateFall(kingSquare) {
+    if (!kingSquare || !this.pieceMeshes.has(kingSquare)) return;
+    const kingGroup = this.pieceMeshes.get(kingSquare);
+    const { x, z } = squareToCoords(kingSquare);
+    this.fallAnimation = {
+      group: kingGroup,
+      progress: 0,
+      duration: 0.95,
+      targetRotZ: 1.32,
+    };
+    this.spawnLandingShockwave(x, z, '#ef4444');
+    setTimeout(() => this.spawnLandingShockwave(x, z, '#fbbf24'), 240);
+    // Gentle dramatic camera zoom toward the fallen King
+    if (!this.menuOrbit) {
+      const zoom = this._getAspectZoomMultiplier();
+      this.cameraGoal = {
+        pos: new THREE.Vector3(x + 3.4 * zoom, 4.6 * zoom, z + 4.4 * zoom),
+        target: new THREE.Vector3(x, 0.3, z),
+      };
+    }
+  }
+
   _animateLoop() {
     requestAnimationFrame(() => this._animateLoop());
     const dt = Math.min(this._clock.getDelta(), 0.05);
@@ -1256,6 +1350,20 @@ export class Scene3D {
         this.particlesGroup.remove(p);
         this.particles.splice(i, 1);
       }
+    }
+
+    // Ambient particles slow drift
+    for (const pts of this.ambientGroup.children) {
+      pts.rotation.y += dt * 0.04;
+    }
+
+    // Checkmate fallen king animation
+    if (this.fallAnimation) {
+      this.fallAnimation.progress = Math.min(1, this.fallAnimation.progress + dt / this.fallAnimation.duration);
+      const t = this.fallAnimation.progress;
+      const bounceEase = t < 0.75 ? (t / 0.75) * (t / 0.75) : 1 - Math.sin(((t - 0.75) / 0.25) * Math.PI) * 0.06;
+      this.fallAnimation.group.rotation.z = bounceEase * this.fallAnimation.targetRotZ;
+      this.fallAnimation.group.position.y = Math.sin(t * Math.PI) * 0.08;
     }
 
     this.controls.update();

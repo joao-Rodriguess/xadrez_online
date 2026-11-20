@@ -8,12 +8,161 @@ import { Chess } from 'chess.js';
  */
 
 export const BOT_LEVELS = {
-  1: { name: 'Aprendiz', elo: '~600', depth: 1, randomness: 0.45, description: 'Ideal para iniciantes; comete erros ocasionais.' },
-  2: { name: 'Casual', elo: '~1000', depth: 2, randomness: 0.18, description: 'Joga capturas básicas e desenvolve peças.' },
-  3: { name: 'Clube', elo: '~1400', depth: 3, randomness: 0.05, description: 'Tático sólido com busca Alpha-Beta e aberturas.' },
-  4: { name: 'Mestre', elo: '~1800', depth: 4, randomness: 0.0, description: 'Usa Quiescence Search e evita armadilhas táticas.' },
-  5: { name: 'Grande Mestre', elo: '~2150', depth: 5, randomness: 0.0, description: 'Iterative Deepening + Transposition Table + Killer Moves.' },
+  1: {
+    name: 'Sofia • Aprendiz',
+    shortName: 'Sofia',
+    elo: '~600',
+    depth: 1,
+    randomness: 0.45,
+    description: 'Sofia joga de forma descontraída; ideal para iniciantes.',
+    chatLines: {
+      start: 'Oi! Vamos jogar uma partida leve e divertida!',
+      capture: 'Opa, peguei essa peça!',
+      check: 'Olha o xeque!',
+      blunder: 'Boa jogada! Não vi essa!',
+    },
+  },
+  2: {
+    name: 'Lucas • Casual',
+    shortName: 'Lucas',
+    elo: '~1000',
+    depth: 2,
+    randomness: 0.18,
+    description: 'Lucas faz capturas básicas e desenvolve suas peças.',
+    chatLines: {
+      start: 'Preparado? Prometo pensar antes de mexer!',
+      capture: 'Boa troca para mim!',
+      check: 'Xeque no Rei!',
+      blunder: 'Eita, essa doeu...',
+    },
+  },
+  3: {
+    name: 'Viktor • Clube',
+    shortName: 'Viktor',
+    elo: '~1400',
+    depth: 3,
+    randomness: 0.05,
+    description: 'Viktor joga táticas sólidas de clube e aberturas clássicas.',
+    chatLines: {
+      start: 'Vamos testar suas aberturas hoje.',
+      capture: 'Material garantido na conta!',
+      check: 'Pressão direta sobre seu Rei!',
+      blunder: 'Excelente combinação tática sua!',
+    },
+  },
+  4: {
+    name: 'Mikhail • Mago',
+    shortName: 'Mikhail',
+    elo: '~1800',
+    depth: 4,
+    randomness: 0.0,
+    description: 'Estilo agressivo com Quiescence Search; adora atacar o Rei.',
+    chatLines: {
+      start: 'Sem piedade no ataque hoje. Mostre sua defesa!',
+      capture: 'Mais uma peça cai no tabuleiro!',
+      check: 'Seu Rei está cercado!',
+      blunder: 'Sacrifício ou golpe brilhante da sua parte!',
+    },
+  },
+  5: {
+    name: 'Aegis GM • Supremo',
+    shortName: 'Aegis GM',
+    elo: '~2150',
+    depth: 5,
+    randomness: 0.0,
+    description: 'Iterative Deepening + Transposition Table + Mop-Up de Grande Mestre.',
+    chatLines: {
+      start: 'Modo Grande Mestre ativado. Cada casa conta.',
+      capture: 'Vantagem material convertida.',
+      check: 'Xeque calculado com precisão.',
+      blunder: 'Lance cirúrgico! Impressionante.',
+    },
+  },
 };
+
+export const TACTICAL_PUZZLES = [
+  {
+    id: 'mate_back_rank',
+    title: 'Mate do Corredor',
+    theme: 'Mate em 1',
+    fen: '6k1/5ppp/8/8/8/8/5PPP/3R2K1 w - - 0 1',
+    playerColor: 'w',
+    hint: 'A 8ª fileira está totalmente desprotegida.',
+    solution: ['Rd8#'],
+  },
+  {
+    id: 'queen_mate_h7',
+    title: 'Golpe na Casa h7',
+    theme: 'Mate em 1',
+    fen: 'r1bqk2r/pppp1ppp/2n2n2/2b1p2Q/2B1P3/8/PPPP1PPP/RNB1K1NR w KQkq - 4 4',
+    playerColor: 'w',
+    hint: 'A Dama e o Bispo apontam juntos para f7!',
+    solution: ['Qxf7#'],
+  },
+  {
+    id: 'knight_royal_fork',
+    title: 'Garfo Real de Cavalo',
+    theme: 'Tática em 1 lance',
+    fen: 'r2qk2r/ppp2ppp/2n5/3np3/2B5/5N2/PPPP1PPP/RNBQK2R w KQkq - 0 7',
+    playerColor: 'w',
+    hint: 'Sacrifique ou ataque f7 com o Bispo? Não, olhe o Cavalo ou Bispo atacando o ponto fraco!',
+    solution: ['Bxd5'],
+  },
+  {
+    id: 'mate_in_2_arabian',
+    title: 'Ataque Mortal com Torre e Dama',
+    theme: 'Mate em 2',
+    fen: '6k1/5p1p/6p1/8/8/2Q5/5PPP/4R1K1 w - - 0 1',
+    playerColor: 'w',
+    hint: 'Dê um xeque decisivo invadindo a oitava fileira com a Torre ou Dama.',
+    solution: ['Re8+'],
+  },
+  {
+    id: 'smothered_setup',
+    title: 'Mate na Diagonal Fatal',
+    theme: 'Mate em 1',
+    fen: 'r4rk1/ppp2ppp/8/8/2B5/1Q6/PPP2PPP/4R1K1 w - - 0 1',
+    playerColor: 'w',
+    hint: 'O ponto f7 está sob fogo cruzado da Dama e do Bispo.',
+    solution: ['Bxf7+'],
+  },
+  {
+    id: 'black_back_rank',
+    title: 'Contra-Ataque das Pretas',
+    theme: 'Mate em 1',
+    fen: '4r1k1/5ppp/8/8/8/8/5PPP/6K1 b - - 0 1',
+    playerColor: 'b',
+    hint: 'As Brancas deixaram a primeira fileira sem escapatória.',
+    solution: ['Re1#'],
+  },
+];
+
+/**
+ * Classifies human/player move tactical quality by comparing board eval before & after the move.
+ */
+export function classifyMoveQuality(prevEvalPawns, nextEvalPawns, moverColor, isMate = false, wasCapture = false) {
+  if (isMate) {
+    return { symbol: '!!', label: 'Xeque-Mate Brilhante!', cssClass: 'q-brilliant', delta: 0 };
+  }
+  const sign = moverColor === 'w' ? 1 : -1;
+  const before = prevEvalPawns * sign;
+  const after = nextEvalPawns * sign;
+  const loss = before - after;
+
+  if (loss <= -1.2 && wasCapture) {
+    return { symbol: '!!', label: 'Lance Brilhante', cssClass: 'q-brilliant', delta: -loss };
+  }
+  if (loss <= 0.25) {
+    return { symbol: '!', label: 'Excelente Lance', cssClass: 'q-best', delta: -loss };
+  }
+  if (loss <= 0.75) {
+    return { symbol: '✓', label: 'Bom Lance', cssClass: 'q-good', delta: -loss };
+  }
+  if (loss <= 1.8) {
+    return { symbol: '?!', label: 'Imprecisão', cssClass: 'q-inaccuracy', delta: -loss };
+  }
+  return { symbol: '??', label: 'Erro Grave', cssClass: 'q-blunder', delta: -loss };
+}
 
 const PIECE_VALUES = { p: 100, n: 320, b: 330, r: 500, q: 900, k: 20000 };
 

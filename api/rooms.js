@@ -199,6 +199,95 @@ export default async function handler(req, res) {
       return sendJson(res, 200, { ok: true, roomId, myColor: assignedColor, room, serverTime: now });
     }
 
+    if (action === 'quickMatch') {
+      const { playerId, playerName, timeControlSeconds = 600, incrementSeconds = 0, pieceCustomization = null } = body;
+      if (!playerId) return sendJson(res, 400, { ok: false, error: 'ID do jogador ausente.' });
+
+      const cutoff = Date.now() - 1000 * 60 * 30;
+      const q = query(collection(db, FIRESTORE_COLLECTION), where('app', '==', 'chess3d_royale'));
+      const snap = await getDocs(q);
+      const waitingRooms = [];
+      snap.forEach((d) => {
+        const r = d.data();
+        if (
+          r &&
+          r.roomId &&
+          r.status === 'waiting' &&
+          (!r.createdAt || r.createdAt > cutoff) &&
+          r.white?.uid !== playerId &&
+          r.black?.uid !== playerId &&
+          (!r.white || !r.black)
+        ) {
+          waitingRooms.push(r);
+        }
+      });
+      waitingRooms.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+
+      if (waitingRooms.length > 0) {
+        const room = waitingRooms[0];
+        const now = Date.now();
+        const assignedColor = !room.white ? 'w' : 'b';
+        const sideKey = assignedColor === 'w' ? 'white' : 'black';
+        const ms = room.timeControl?.initialSeconds > 0 ? room.timeControl.initialSeconds * 1000 : 0;
+        const playerObj = sanitizeData({
+          uid: playerId,
+          name: String(playerName || (assignedColor === 'w' ? 'Brancas' : 'Pretas')).slice(0, 24),
+          connected: true,
+          lastSeen: now,
+          timeLeftMs: ms,
+          pieceCustomization: pieceCustomization || null,
+        });
+        room[sideKey] = playerObj;
+        room.status = room.white && room.black ? 'playing' : 'waiting';
+        room.updatedAt = now;
+        await setDoc(
+          roomDoc(room.roomId),
+          { [sideKey]: playerObj, status: room.status, updatedAt: now },
+          { merge: true }
+        );
+        return sendJson(res, 200, { ok: true, matched: true, roomId: room.roomId, myColor: assignedColor, room, serverTime: now });
+      }
+
+      // No waiting room found -> create a new open room automatically
+      const roomId = generateRoomCode();
+      const now = Date.now();
+      const ms = timeControlSeconds > 0 ? timeControlSeconds * 1000 : 0;
+      const hostPayload = {
+        uid: playerId,
+        name: String(playerName || 'Jogador').slice(0, 24),
+        connected: true,
+        lastSeen: now,
+        timeLeftMs: ms,
+        pieceCustomization: pieceCustomization || null,
+      };
+      const roomData = sanitizeData({
+        app: 'chess3d_royale',
+        roomId,
+        status: 'waiting',
+        createdAt: now,
+        updatedAt: now,
+        timeControl: { initialSeconds: timeControlSeconds, incrementSeconds },
+        white: hostPayload,
+        black: null,
+        fen: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1',
+        turn: 'w',
+        lastMove: null,
+        moves: [],
+        result: null,
+        drawOfferBy: null,
+        rematchVotes: { white: false, black: false },
+        chat: {
+          sys_init: {
+            sender: 'Sistema',
+            text: `Partida rápida ${roomId} aberta. Aguardando oponente...`,
+            timestamp: now,
+          },
+        },
+      });
+      await setDoc(roomDoc(roomId), roomData);
+      return sendJson(res, 200, { ok: true, matched: false, roomId, myColor: 'w', room: roomData, serverTime: now });
+    }
+
     if (action === 'heartbeat') {
       const roomId = String(body.roomId || '').trim().toUpperCase();
       const { playerId, color } = body;

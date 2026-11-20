@@ -55,17 +55,35 @@
             <button class="menu-card menu-card-primary" data-menu-action="bot">
               <div class="menu-card-icon">🤖</div>
               <div class="menu-card-body">
-                <strong>Jogar vs Bot IA</strong>
-                <p>Desafie 5 níveis do Aprendiz ao Grande Mestre com Eval Bar e dicas táticas.</p>
+                <strong>Jogar vs Mestres IA</strong>
+                <p>Desafie 5 personalidades (Sofia a Aegis GM) com análise tática ao vivo.</p>
               </div>
               <span class="menu-card-arrow">→</span>
             </button>
 
-            <button class="menu-card menu-card-accent" data-menu-action="online">
+            <button class="menu-card menu-card-accent" data-menu-action="quick_online">
+              <div class="menu-card-icon">⚡</div>
+              <div class="menu-card-body">
+                <strong>Partida Rápida Online</strong>
+                <p>Matchmaking automático na nuvem: entre em 1 clique contra quem estiver online.</p>
+              </div>
+              <span class="menu-card-arrow">→</span>
+            </button>
+
+            <button class="menu-card" data-menu-action="online">
               <div class="menu-card-icon">🌐</div>
               <div class="menu-card-body">
-                <strong>Multiplayer Online</strong>
-                <p>Crie salas com código, compartilhe links e jogue em tempo real via Firebase.</p>
+                <strong>Salas & Convites Online</strong>
+                <p>Crie sala privada/pública, gere link de convite e acompanhe presença ao vivo.</p>
+              </div>
+              <span class="menu-card-arrow">→</span>
+            </button>
+
+            <button class="menu-card menu-card-purple" data-menu-action="puzzles">
+              <div class="menu-card-icon">🧩</div>
+              <div class="menu-card-body">
+                <strong>Desafios Táticos 3D</strong>
+                <p>Resolva problemas de Mate em 1, Mate em 2 e sacrifícios sobre o tabuleiro 3D.</p>
               </div>
               <span class="menu-card-arrow">→</span>
             </button>
@@ -74,7 +92,7 @@
               <div class="menu-card-icon">👥</div>
               <div class="menu-card-body">
                 <strong>Local 2 Jogadores</strong>
-                <p>Partida presencial no mesmo dispositivo com giro automático opcional.</p>
+                <p>Partida presencial no mesmo dispositivo com giro automático e variantes.</p>
               </div>
               <span class="menu-card-arrow">→</span>
             </button>
@@ -83,7 +101,7 @@
               <div class="menu-card-icon">⚔</div>
               <div class="menu-card-body">
                 <strong>Assistir Bot vs Bot</strong>
-                <p>Observe duas IAs duelando em tempo real sobre o tabuleiro 3D.</p>
+                <p>Observe duas IAs duelando com cadência padrão e gráfico de vantagem.</p>
               </div>
               <span class="menu-card-arrow">→</span>
             </button>
@@ -141,6 +159,7 @@
             <div class="control-group">
               <label for="board-theme-select" class="sr-only">Tema do Tabuleiro</label>
               <select id="board-theme-select" class="select-compact" title="Tema do Tabuleiro 3D"></select>
+              <button id="btn-threat-map" class="cam-btn" title="Mostrar/ocultar mapa de casas atacadas e defendidas">🛡 Ameaças 3D</button>
               <label class="toggle-chip" title="Girar câmera automaticamente a cada turno em modo local">
                 <input type="checkbox" id="chk-auto-flip" />
                 <span>Auto-Giro</span>
@@ -172,8 +191,9 @@
               <div class="avatar avatar-black">♚</div>
               <div class="player-info-col">
                 <div class="player-name-row">
-                  <span id="name-black" class="player-name">Bot Clube (1400)</span>
+                  <span id="name-black" class="player-name">Viktor • Clube (1400)</span>
                   <span id="presence-black" class="presence-pill hidden"></span>
+                  <span id="checks-black" class="checks-pill hidden">0/3 ♚</span>
                 </div>
                 <div id="lost-by-black" class="lost-row">Perdeu: 0 peças</div>
                 <div id="captured-by-black" class="captured-row"></div>
@@ -182,10 +202,23 @@
             <div id="clock-black" class="clock">10:00</div>
           </div>
 
+          <!-- Tactical Puzzle Banner -->
+          <div id="puzzle-banner" class="puzzle-banner hidden">
+            <div class="puzzle-head">
+              <strong id="puzzle-title">Desafio Tático</strong>
+              <span id="puzzle-theme" class="badge badge-demo">Mate em 1</span>
+            </div>
+            <div class="puzzle-actions">
+              <button id="btn-puzzle-hint" class="btn btn-xs btn-accent">💡 Dica</button>
+              <button id="btn-puzzle-next" class="btn btn-xs btn-primary">Próximo ⏭</button>
+            </div>
+          </div>
+
           <!-- Action Buttons -->
           <div class="match-actions">
             <button id="btn-hint" class="btn btn-sm btn-accent" title="Mostrar melhor lance segundo a IA">💡 Dica IA</button>
             <button id="btn-undo" class="btn btn-sm btn-ghost" title="Desfazer último lance">↩ Desfazer</button>
+            <button id="btn-copy-pgn" class="btn btn-sm btn-ghost" title="Copiar PGN e FEN da partida">📋 PGN</button>
             <button id="btn-draw" class="btn btn-sm btn-ghost hidden">🤝 Empate</button>
             <button id="btn-resign" class="btn btn-sm btn-danger">🏳 Desistir</button>
           </div>
@@ -221,11 +254,17 @@
             </form>
           </div>
 
-          <!-- Move History -->
+          <!-- Move History & Eval Chart -->
           <div class="history-box">
             <div class="history-header">
-              <span>Histórico (clique p/ voltar)</span>
-              <span id="move-count-badge" class="mono">0 lances</span>
+              <span>Histórico & Análise</span>
+              <div class="history-header-right">
+                <span id="move-quality-badge" class="quality-badge hidden">! Excelente</span>
+                <span id="move-count-badge" class="mono">0 lances</span>
+              </div>
+            </div>
+            <div class="eval-chart-wrap" title="Gráfico de vantagem da partida (clique para navegar até o lance)">
+              <canvas id="eval-chart-canvas" width="310" height="46"></canvas>
             </div>
             <div id="history-restart-bar" class="history-restart-bar hidden">
               <span id="history-restart-label">Lance #1</span>
@@ -245,6 +284,7 @@
                 <div class="player-name-row">
                   <span id="name-white" class="player-name">Você (Brancas)</span>
                   <span id="presence-white" class="presence-pill hidden"></span>
+                  <span id="checks-white" class="checks-pill hidden">0/3 ♔</span>
                 </div>
                 <div id="lost-by-white" class="lost-row">Perdeu: 0 peças</div>
                 <div id="captured-by-white" class="captured-row"></div>
@@ -283,15 +323,24 @@
           </div>
 
           <div id="bot-options-group" class="form-row">
-            <label for="bot-level-select">Dificuldade do Bot</label>
+            <label for="bot-level-select">Mestre / Dificuldade do Bot</label>
             <select id="bot-level-select" class="input">
-              <option value="1">Nível 1 — Aprendiz (~600 ELO)</option>
-              <option value="2">Nível 2 — Casual (~1000 ELO)</option>
-              <option value="3" selected>Nível 3 — Clube (~1400 ELO)</option>
-              <option value="4">Nível 4 — Mestre (~1800 ELO)</option>
-              <option value="5">Nível 5 — Grande Mestre (~2150 ELO)</option>
+              <option value="1">Nível 1 — Sofia • Aprendiz (~600 ELO)</option>
+              <option value="2">Nível 2 — Lucas • Casual (~1000 ELO)</option>
+              <option value="3" selected>Nível 3 — Viktor • Clube (~1400 ELO)</option>
+              <option value="4">Nível 4 — Mikhail • Mago Agressivo (~1800 ELO)</option>
+              <option value="5">Nível 5 — Aegis GM • Supremo (~2150 ELO)</option>
             </select>
             <small id="bot-level-desc" class="hint-text"></small>
+          </div>
+
+          <div class="form-row">
+            <label for="variant-select">Variante das Regras</label>
+            <select id="variant-select" class="input">
+              <option value="standard" selected>Xadrez Clássico Oficial</option>
+              <option value="koth">Rei da Colina (Leve o Rei vivo até d4/e4/d5/e5!)</option>
+              <option value="three_check">3-Xeques (Vence quem der 3 xeques primeiro!)</option>
+            </select>
           </div>
 
           <div class="form-grid-2">
@@ -420,6 +469,10 @@
         </div>
         <div class="modal-body">
           <div id="lobby-mode-banner" class="info-banner"></div>
+
+          <button id="btn-quick-match" class="btn btn-gold full-width">
+            ⚡ Partida Rápida Automática (Matchmaking Online)
+          </button>
 
           <div class="lobby-grid">
             <div class="lobby-box">

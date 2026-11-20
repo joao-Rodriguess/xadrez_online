@@ -30,7 +30,19 @@ class AudioFX {
     return this.enabled;
   }
 
+  vibrate(pattern) {
+    if (!this.enabled) return;
+    if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+      try {
+        navigator.vibrate(pattern);
+      } catch {
+        // ignore vibration unsupported/blocked
+      }
+    }
+  }
+
   playSelect() {
+    this.vibrate(12);
     const ctx = this._ensureContext();
     if (!ctx) return;
     const now = ctx.currentTime;
@@ -48,6 +60,7 @@ class AudioFX {
   }
 
   playMove() {
+    this.vibrate(18);
     const ctx = this._ensureContext();
     if (!ctx) return;
     const now = ctx.currentTime;
@@ -80,6 +93,7 @@ class AudioFX {
   }
 
   playCapture() {
+    this.vibrate([28, 35, 55]);
     const ctx = this._ensureContext();
     if (!ctx) return;
     const now = ctx.currentTime;
@@ -132,6 +146,7 @@ class AudioFX {
   }
 
   playCheck() {
+    this.vibrate([50, 40, 80]);
     const ctx = this._ensureContext();
     if (!ctx) return;
     const now = ctx.currentTime;
@@ -170,6 +185,7 @@ class AudioFX {
   }
 
   playGameOver(victory = true) {
+    this.vibrate(victory ? [40, 40, 120] : [80, 50, 80]);
     const ctx = this._ensureContext();
     if (!ctx) return;
     const now = ctx.currentTime;
@@ -187,6 +203,22 @@ class AudioFX {
       osc.start(t);
       osc.stop(t + 0.42);
     });
+  }
+
+  playClockTick(urgent = false) {
+    const ctx = this._ensureContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(urgent ? 980 : 720, now);
+    gain.gain.setValueAtTime(urgent ? 0.08 : 0.04, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.04);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(now);
+    osc.stop(now + 0.045);
   }
 }
 
