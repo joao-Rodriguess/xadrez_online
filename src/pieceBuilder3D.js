@@ -124,12 +124,39 @@ export function createDefaultCustomization() {
   return { pieces };
 }
 
-function makeLathe(points, segments = 28) {
-  const vecs = points.map(([x, y]) => new THREE.Vector2(Math.max(0.0001, x), y));
-  const geo = new THREE.LatheGeometry(vecs, segments);
-  geo.computeVertexNormals();
+const _geometryCache = new Map();
+
+function getCachedGeo(key, factory) {
+  let geo = _geometryCache.get(key);
+  if (!geo) {
+    geo = factory();
+    _geometryCache.set(key, geo);
+  }
   return geo;
 }
+
+function makeLathe(points, segments = 28) {
+  const key = `lathe:${segments}:${points.map(([x, y]) => `${x},${y}`).join('|')}`;
+  return getCachedGeo(key, () => {
+    const vecs = points.map(([x, y]) => new THREE.Vector2(Math.max(0.0001, x), y));
+    const geo = new THREE.LatheGeometry(vecs, segments);
+    geo.computeVertexNormals();
+    return geo;
+  });
+}
+
+const geoCylinder = (rTop, rBot, h, seg = 16) =>
+  getCachedGeo(`cyl:${rTop},${rBot},${h},${seg}`, () => new THREE.CylinderGeometry(rTop, rBot, h, seg));
+const geoTorus = (r, tube, rSeg, tSeg) =>
+  getCachedGeo(`tor:${r},${tube},${rSeg},${tSeg}`, () => new THREE.TorusGeometry(r, tube, rSeg, tSeg));
+const geoSphere = (r, wSeg, hSeg) =>
+  getCachedGeo(`sph:${r},${wSeg},${hSeg}`, () => new THREE.SphereGeometry(r, wSeg, hSeg));
+const geoBox = (w, h, d) =>
+  getCachedGeo(`box:${w},${h},${d}`, () => new THREE.BoxGeometry(w, h, d));
+const geoCone = (r, h, seg = 16) =>
+  getCachedGeo(`cone:${r},${h},${seg}`, () => new THREE.ConeGeometry(r, h, seg));
+const geoOctahedron = (r, detail = 0) =>
+  getCachedGeo(`oct:${r},${detail}`, () => new THREE.OctahedronGeometry(r, detail));
 
 function buildMaterials(colorSide, cfg) {
   const mainHex = colorSide === 'w' ? cfg.whiteColor : cfg.blackColor;
@@ -181,20 +208,20 @@ function buildStauntonPiece(type, colorSide, mainMat, accentMat) {
       [0.21, 0.23], [0.15, 0.42], [0.12, 0.62], [0.20, 0.66], [0.11, 0.70], [0.001, 0.72]
     ]);
     addMesh(g, lathe, mainMat);
-    addMesh(g, new THREE.TorusGeometry(0.16, 0.024, 12, 24), accentMat, [0, 0.65, 0], [Math.PI / 2, 0, 0]);
-    addMesh(g, new THREE.SphereGeometry(0.18, 24, 18), mainMat, [0, 0.87, 0]);
+    addMesh(g, geoTorus(0.16, 0.024, 12, 24), accentMat, [0, 0.65, 0], [Math.PI / 2, 0, 0]);
+    addMesh(g, geoSphere(0.18, 24, 18), mainMat, [0, 0.87, 0]);
   } else if (type === 'r') {
     const lathe = makeLathe([
       [0, 0], [0.36, 0], [0.36, 0.09], [0.29, 0.16], [0.24, 0.26],
       [0.21, 0.68], [0.27, 0.75], [0.27, 0.90], [0.18, 0.90], [0.18, 0.80], [0.001, 0.80]
     ]);
     addMesh(g, lathe, mainMat);
-    addMesh(g, new THREE.TorusGeometry(0.24, 0.025, 12, 24), accentMat, [0, 0.74, 0], [Math.PI / 2, 0, 0]);
+    addMesh(g, geoTorus(0.24, 0.025, 12, 24), accentMat, [0, 0.74, 0], [Math.PI / 2, 0, 0]);
     for (let i = 0; i < 6; i++) {
       const a = (i / 6) * Math.PI * 2;
       addMesh(
         g,
-        new THREE.BoxGeometry(0.11, 0.14, 0.09),
+        geoBox(0.11, 0.14, 0.09),
         mainMat,
         [Math.cos(a) * 0.22, 0.96, Math.sin(a) * 0.22],
         [0, -a, 0]
@@ -205,64 +232,67 @@ function buildStauntonPiece(type, colorSide, mainMat, accentMat) {
       [0, 0], [0.36, 0], [0.36, 0.09], [0.29, 0.16], [0.25, 0.25], [0.21, 0.32], [0.001, 0.32]
     ]);
     addMesh(g, base, mainMat);
-    addMesh(g, new THREE.TorusGeometry(0.23, 0.024, 12, 24), accentMat, [0, 0.29, 0], [Math.PI / 2, 0, 0]);
+    addMesh(g, geoTorus(0.23, 0.024, 12, 24), accentMat, [0, 0.29, 0], [Math.PI / 2, 0, 0]);
 
-    // Sculpted horse profile via ExtrudeGeometry
-    const shape = new THREE.Shape();
-    shape.moveTo(-0.16, 0);
-    shape.lineTo(0.18, 0);
-    shape.quadraticCurveTo(0.21, 0.22, 0.14, 0.42);
-    shape.lineTo(0.27, 0.56);
-    shape.lineTo(0.22, 0.66);
-    shape.lineTo(0.06, 0.64);
-    shape.lineTo(0.02, 0.78);
-    shape.lineTo(-0.07, 0.68);
-    shape.quadraticCurveTo(-0.22, 0.56, -0.22, 0.30);
-    shape.quadraticCurveTo(-0.21, 0.12, -0.16, 0);
+    // Sculpted horse profile via cached ExtrudeGeometry
+    const extrudeGeo = getCachedGeo('staunton_knight_head', () => {
+      const shape = new THREE.Shape();
+      shape.moveTo(-0.16, 0);
+      shape.lineTo(0.18, 0);
+      shape.quadraticCurveTo(0.21, 0.22, 0.14, 0.42);
+      shape.lineTo(0.27, 0.56);
+      shape.lineTo(0.22, 0.66);
+      shape.lineTo(0.06, 0.64);
+      shape.lineTo(0.02, 0.78);
+      shape.lineTo(-0.07, 0.68);
+      shape.quadraticCurveTo(-0.22, 0.56, -0.22, 0.30);
+      shape.quadraticCurveTo(-0.21, 0.12, -0.16, 0);
 
-    const extrudeGeo = new THREE.ExtrudeGeometry(shape, {
-      depth: 0.18,
-      bevelEnabled: true,
-      bevelThickness: 0.035,
-      bevelSize: 0.03,
-      bevelSegments: 3,
+      const geo = new THREE.ExtrudeGeometry(shape, {
+        depth: 0.18,
+        bevelEnabled: true,
+        bevelThickness: 0.035,
+        bevelSize: 0.03,
+        bevelSegments: 3,
+      });
+      geo.center();
+      return geo;
     });
-    extrudeGeo.center();
     const facingRotY = colorSide === 'w' ? Math.PI / 2 : -Math.PI / 2;
     addMesh(g, extrudeGeo, mainMat, [0, 0.69, 0], [0, facingRotY, 0]);
     // Mane accent crest
-    addMesh(g, new THREE.BoxGeometry(0.06, 0.34, 0.09), accentMat, [0, 0.78, colorSide === 'w' ? 0.14 : -0.14], [0.28 * (colorSide === 'w' ? 1 : -1), 0, 0]);
+    addMesh(g, geoBox(0.06, 0.34, 0.09), accentMat, [0, 0.78, colorSide === 'w' ? 0.14 : -0.14], [0.28 * (colorSide === 'w' ? 1 : -1), 0, 0]);
   } else if (type === 'b') {
     const lathe = makeLathe([
       [0, 0], [0.35, 0], [0.35, 0.09], [0.28, 0.15], [0.22, 0.24],
       [0.14, 0.68], [0.22, 0.74], [0.13, 0.79], [0.19, 0.92], [0.14, 1.07], [0.04, 1.16], [0.001, 1.18]
     ]);
     addMesh(g, lathe, mainMat);
-    addMesh(g, new THREE.TorusGeometry(0.18, 0.025, 12, 24), accentMat, [0, 0.74, 0], [Math.PI / 2, 0, 0]);
-    addMesh(g, new THREE.SphereGeometry(0.065, 16, 16), accentMat, [0, 1.22, 0]);
+    addMesh(g, geoTorus(0.18, 0.025, 12, 24), accentMat, [0, 0.74, 0], [Math.PI / 2, 0, 0]);
+    addMesh(g, geoSphere(0.065, 16, 16), accentMat, [0, 1.22, 0]);
   } else if (type === 'q') {
     const lathe = makeLathe([
       [0, 0], [0.39, 0], [0.39, 0.10], [0.31, 0.17], [0.25, 0.26],
       [0.16, 0.76], [0.25, 0.84], [0.17, 0.90], [0.26, 1.15], [0.14, 1.17], [0.001, 1.12]
     ]);
     addMesh(g, lathe, mainMat);
-    addMesh(g, new THREE.TorusGeometry(0.22, 0.026, 12, 26), accentMat, [0, 0.84, 0], [Math.PI / 2, 0, 0]);
+    addMesh(g, geoTorus(0.22, 0.026, 12, 26), accentMat, [0, 0.84, 0], [Math.PI / 2, 0, 0]);
     for (let i = 0; i < 8; i++) {
       const a = (i / 8) * Math.PI * 2;
-      addMesh(g, new THREE.SphereGeometry(0.045, 12, 12), accentMat, [Math.cos(a) * 0.22, 1.20, Math.sin(a) * 0.22]);
+      addMesh(g, geoSphere(0.045, 12, 12), accentMat, [Math.cos(a) * 0.22, 1.20, Math.sin(a) * 0.22]);
     }
-    addMesh(g, new THREE.SphereGeometry(0.09, 18, 16), accentMat, [0, 1.29, 0]);
+    addMesh(g, geoSphere(0.09, 18, 16), accentMat, [0, 1.29, 0]);
   } else if (type === 'k') {
     const lathe = makeLathe([
       [0, 0], [0.40, 0], [0.40, 0.10], [0.32, 0.18], [0.26, 0.28],
       [0.17, 0.82], [0.27, 0.90], [0.19, 0.96], [0.26, 1.22], [0.08, 1.28], [0.001, 1.28]
     ]);
     addMesh(g, lathe, mainMat);
-    addMesh(g, new THREE.TorusGeometry(0.24, 0.028, 12, 26), accentMat, [0, 0.90, 0], [Math.PI / 2, 0, 0]);
-    addMesh(g, new THREE.TorusGeometry(0.22, 0.022, 12, 26), accentMat, [0, 1.20, 0], [Math.PI / 2, 0, 0]);
+    addMesh(g, geoTorus(0.24, 0.028, 12, 26), accentMat, [0, 0.90, 0], [Math.PI / 2, 0, 0]);
+    addMesh(g, geoTorus(0.22, 0.022, 12, 26), accentMat, [0, 1.20, 0], [Math.PI / 2, 0, 0]);
     // Imperial Cross
-    addMesh(g, new THREE.BoxGeometry(0.075, 0.26, 0.075), accentMat, [0, 1.40, 0]);
-    addMesh(g, new THREE.BoxGeometry(0.20, 0.068, 0.075), accentMat, [0, 1.43, 0]);
+    addMesh(g, geoBox(0.075, 0.26, 0.075), accentMat, [0, 1.40, 0]);
+    addMesh(g, geoBox(0.20, 0.068, 0.075), accentMat, [0, 1.43, 0]);
   }
   return g;
 }
@@ -271,51 +301,51 @@ function buildStauntonPiece(type, colorSide, mainMat, accentMat) {
 function buildFuturisticPiece(type, colorSide, mainMat, accentMat) {
   const g = new THREE.Group();
   // Hexagonal cyber pedestal
-  addMesh(g, new THREE.CylinderGeometry(0.32, 0.37, 0.11, 6), mainMat, [0, 0.055, 0]);
-  addMesh(g, new THREE.TorusGeometry(0.31, 0.022, 8, 6), accentMat, [0, 0.115, 0], [Math.PI / 2, 0, 0]);
+  addMesh(g, geoCylinder(0.32, 0.37, 0.11, 6), mainMat, [0, 0.055, 0]);
+  addMesh(g, geoTorus(0.31, 0.022, 8, 6), accentMat, [0, 0.115, 0], [Math.PI / 2, 0, 0]);
 
   if (type === 'p') {
-    addMesh(g, new THREE.CylinderGeometry(0.11, 0.22, 0.45, 6), mainMat, [0, 0.34, 0]);
-    addMesh(g, new THREE.TorusGeometry(0.18, 0.022, 8, 18), accentMat, [0, 0.62, 0], [Math.PI / 2, 0.22, 0]);
-    addMesh(g, new THREE.OctahedronGeometry(0.15, 0), accentMat, [0, 0.80, 0]);
+    addMesh(g, geoCylinder(0.11, 0.22, 0.45, 6), mainMat, [0, 0.34, 0]);
+    addMesh(g, geoTorus(0.18, 0.022, 8, 18), accentMat, [0, 0.62, 0], [Math.PI / 2, 0.22, 0]);
+    addMesh(g, geoOctahedron(0.15, 0), accentMat, [0, 0.80, 0]);
   } else if (type === 'r') {
-    addMesh(g, new THREE.CylinderGeometry(0.24, 0.28, 0.62, 8), mainMat, [0, 0.42, 0]);
-    addMesh(g, new THREE.CylinderGeometry(0.11, 0.11, 0.72, 8), accentMat, [0, 0.50, 0]);
+    addMesh(g, geoCylinder(0.24, 0.28, 0.62, 8), mainMat, [0, 0.42, 0]);
+    addMesh(g, geoCylinder(0.11, 0.11, 0.72, 8), accentMat, [0, 0.50, 0]);
     for (let i = 0; i < 4; i++) {
       const a = (i / 4) * Math.PI * 2 + Math.PI / 4;
-      addMesh(g, new THREE.BoxGeometry(0.11, 0.30, 0.11), mainMat, [Math.cos(a) * 0.22, 0.86, Math.sin(a) * 0.22], [0, -a, 0]);
+      addMesh(g, geoBox(0.11, 0.30, 0.11), mainMat, [Math.cos(a) * 0.22, 0.86, Math.sin(a) * 0.22], [0, -a, 0]);
     }
-    addMesh(g, new THREE.TorusGeometry(0.24, 0.025, 8, 8), accentMat, [0, 0.78, 0], [Math.PI / 2, 0, 0]);
+    addMesh(g, geoTorus(0.24, 0.025, 8, 8), accentMat, [0, 0.78, 0], [Math.PI / 2, 0, 0]);
   } else if (type === 'n') {
     const dir = colorSide === 'w' ? -1 : 1;
-    addMesh(g, new THREE.CylinderGeometry(0.18, 0.25, 0.36, 6), mainMat, [0, 0.29, 0]);
-    addMesh(g, new THREE.BoxGeometry(0.24, 0.46, 0.28), mainMat, [0, 0.60, 0], [0.22 * dir, 0, 0]);
-    addMesh(g, new THREE.BoxGeometry(0.20, 0.18, 0.36), mainMat, [0, 0.86, 0.11 * dir], [-0.28 * dir, 0, 0]);
+    addMesh(g, geoCylinder(0.18, 0.25, 0.36, 6), mainMat, [0, 0.29, 0]);
+    addMesh(g, geoBox(0.24, 0.46, 0.28), mainMat, [0, 0.60, 0], [0.22 * dir, 0, 0]);
+    addMesh(g, geoBox(0.20, 0.18, 0.36), mainMat, [0, 0.86, 0.11 * dir], [-0.28 * dir, 0, 0]);
     // Cyber visor
-    addMesh(g, new THREE.BoxGeometry(0.22, 0.06, 0.14), accentMat, [0, 0.88, 0.18 * dir]);
+    addMesh(g, geoBox(0.22, 0.06, 0.14), accentMat, [0, 0.88, 0.18 * dir]);
     // Fin blades
-    addMesh(g, new THREE.ConeGeometry(0.08, 0.26, 4), accentMat, [0, 1.02, -0.05 * dir], [-0.3 * dir, 0, 0]);
+    addMesh(g, geoCone(0.08, 0.26, 4), accentMat, [0, 1.02, -0.05 * dir], [-0.3 * dir, 0, 0]);
   } else if (type === 'b') {
-    addMesh(g, new THREE.CylinderGeometry(0.08, 0.25, 0.76, 6), mainMat, [0, 0.49, 0]);
-    addMesh(g, new THREE.TorusGeometry(0.22, 0.022, 8, 24), accentMat, [0, 0.78, 0], [Math.PI / 3, 0.4, 0]);
-    addMesh(g, new THREE.TorusGeometry(0.22, 0.022, 8, 24), accentMat, [0, 0.78, 0], [-Math.PI / 3, -0.4, 0]);
-    addMesh(g, new THREE.OctahedronGeometry(0.14, 0), accentMat, [0, 1.08, 0], [0, Math.PI / 4, 0]);
+    addMesh(g, geoCylinder(0.08, 0.25, 0.76, 6), mainMat, [0, 0.49, 0]);
+    addMesh(g, geoTorus(0.22, 0.022, 8, 24), accentMat, [0, 0.78, 0], [Math.PI / 3, 0.4, 0]);
+    addMesh(g, geoTorus(0.22, 0.022, 8, 24), accentMat, [0, 0.78, 0], [-Math.PI / 3, -0.4, 0]);
+    addMesh(g, geoOctahedron(0.14, 0), accentMat, [0, 1.08, 0], [0, Math.PI / 4, 0]);
   } else if (type === 'q') {
-    addMesh(g, new THREE.CylinderGeometry(0.14, 0.28, 0.82, 8), mainMat, [0, 0.52, 0]);
-    addMesh(g, new THREE.TorusGeometry(0.26, 0.025, 8, 24), accentMat, [0, 0.94, 0], [Math.PI / 2, 0, 0]);
+    addMesh(g, geoCylinder(0.14, 0.28, 0.82, 8), mainMat, [0, 0.52, 0]);
+    addMesh(g, geoTorus(0.26, 0.025, 8, 24), accentMat, [0, 0.94, 0], [Math.PI / 2, 0, 0]);
     for (let i = 0; i < 6; i++) {
       const a = (i / 6) * Math.PI * 2;
-      addMesh(g, new THREE.ConeGeometry(0.05, 0.26, 4), mainMat, [Math.cos(a) * 0.21, 1.10, Math.sin(a) * 0.21], [0, 0, 0]);
+      addMesh(g, geoCone(0.05, 0.26, 4), mainMat, [Math.cos(a) * 0.21, 1.10, Math.sin(a) * 0.21], [0, 0, 0]);
     }
-    addMesh(g, new THREE.OctahedronGeometry(0.14, 1), accentMat, [0, 1.24, 0]);
+    addMesh(g, geoOctahedron(0.14, 1), accentMat, [0, 1.24, 0]);
   } else if (type === 'k') {
-    addMesh(g, new THREE.CylinderGeometry(0.18, 0.30, 0.88, 8), mainMat, [0, 0.55, 0]);
-    addMesh(g, new THREE.TorusGeometry(0.28, 0.028, 10, 8), accentMat, [0, 0.98, 0], [Math.PI / 2, 0, 0]);
+    addMesh(g, geoCylinder(0.18, 0.30, 0.88, 8), mainMat, [0, 0.55, 0]);
+    addMesh(g, geoTorus(0.28, 0.028, 10, 8), accentMat, [0, 0.98, 0], [Math.PI / 2, 0, 0]);
     // Levitating reactor core + prism cage
-    addMesh(g, new THREE.OctahedronGeometry(0.15, 0), accentMat, [0, 1.26, 0]);
-    addMesh(g, new THREE.TorusGeometry(0.23, 0.02, 8, 24), accentMat, [0, 1.26, 0], [Math.PI / 4, 0, 0]);
-    addMesh(g, new THREE.BoxGeometry(0.06, 0.24, 0.06), accentMat, [0, 1.48, 0]);
-    addMesh(g, new THREE.BoxGeometry(0.18, 0.06, 0.06), accentMat, [0, 1.50, 0]);
+    addMesh(g, geoOctahedron(0.15, 0), accentMat, [0, 1.26, 0]);
+    addMesh(g, geoTorus(0.23, 0.02, 8, 24), accentMat, [0, 1.26, 0], [Math.PI / 4, 0, 0]);
+    addMesh(g, geoBox(0.06, 0.24, 0.06), accentMat, [0, 1.48, 0]);
+    addMesh(g, geoBox(0.18, 0.06, 0.06), accentMat, [0, 1.50, 0]);
   }
   return g;
 }
@@ -323,32 +353,32 @@ function buildFuturisticPiece(type, colorSide, mainMat, accentMat) {
 // ---------- 3. MINIMALIST BAUHAUS STYLE ----------
 function buildMinimalistPiece(type, colorSide, mainMat, accentMat) {
   const g = new THREE.Group();
-  addMesh(g, new THREE.CylinderGeometry(0.33, 0.33, 0.07, 32), mainMat, [0, 0.035, 0]);
+  addMesh(g, geoCylinder(0.33, 0.33, 0.07, 32), mainMat, [0, 0.035, 0]);
 
   if (type === 'p') {
-    addMesh(g, new THREE.CylinderGeometry(0.12, 0.26, 0.52, 32), mainMat, [0, 0.33, 0]);
-    addMesh(g, new THREE.SphereGeometry(0.14, 24, 24), accentMat, [0, 0.72, 0]);
+    addMesh(g, geoCylinder(0.12, 0.26, 0.52, 32), mainMat, [0, 0.33, 0]);
+    addMesh(g, geoSphere(0.14, 24, 24), accentMat, [0, 0.72, 0]);
   } else if (type === 'r') {
-    addMesh(g, new THREE.CylinderGeometry(0.24, 0.24, 0.74, 32), mainMat, [0, 0.44, 0]);
-    addMesh(g, new THREE.CylinderGeometry(0.26, 0.26, 0.08, 32), accentMat, [0, 0.84, 0]);
+    addMesh(g, geoCylinder(0.24, 0.24, 0.74, 32), mainMat, [0, 0.44, 0]);
+    addMesh(g, geoCylinder(0.26, 0.26, 0.08, 32), accentMat, [0, 0.84, 0]);
   } else if (type === 'n') {
     const dir = colorSide === 'w' ? -1 : 1;
-    addMesh(g, new THREE.CylinderGeometry(0.22, 0.26, 0.44, 32), mainMat, [0, 0.29, 0]);
-    addMesh(g, new THREE.BoxGeometry(0.22, 0.42, 0.24), mainMat, [0, 0.64, 0.04 * dir], [0.35 * dir, 0, 0]);
-    addMesh(g, new THREE.BoxGeometry(0.23, 0.12, 0.28), accentMat, [0, 0.85, 0.14 * dir], [0.15 * dir, 0, 0]);
+    addMesh(g, geoCylinder(0.22, 0.26, 0.44, 32), mainMat, [0, 0.29, 0]);
+    addMesh(g, geoBox(0.22, 0.42, 0.24), mainMat, [0, 0.64, 0.04 * dir], [0.35 * dir, 0, 0]);
+    addMesh(g, geoBox(0.23, 0.12, 0.28), accentMat, [0, 0.85, 0.14 * dir], [0.15 * dir, 0, 0]);
   } else if (type === 'b') {
-    addMesh(g, new THREE.ConeGeometry(0.26, 0.92, 32), mainMat, [0, 0.53, 0]);
-    addMesh(g, new THREE.TorusGeometry(0.16, 0.028, 14, 32), accentMat, [0, 0.64, 0], [Math.PI / 2, 0, 0]);
-    addMesh(g, new THREE.SphereGeometry(0.08, 20, 20), accentMat, [0, 1.05, 0]);
+    addMesh(g, geoCone(0.26, 0.92, 32), mainMat, [0, 0.53, 0]);
+    addMesh(g, geoTorus(0.16, 0.028, 14, 32), accentMat, [0, 0.64, 0], [Math.PI / 2, 0, 0]);
+    addMesh(g, geoSphere(0.08, 20, 20), accentMat, [0, 1.05, 0]);
   } else if (type === 'q') {
-    addMesh(g, new THREE.CylinderGeometry(0.16, 0.28, 0.96, 32), mainMat, [0, 0.55, 0]);
-    addMesh(g, new THREE.TorusGeometry(0.22, 0.03, 14, 32), accentMat, [0, 1.05, 0], [Math.PI / 2, 0, 0]);
-    addMesh(g, new THREE.SphereGeometry(0.11, 24, 24), mainMat, [0, 1.18, 0]);
+    addMesh(g, geoCylinder(0.16, 0.28, 0.96, 32), mainMat, [0, 0.55, 0]);
+    addMesh(g, geoTorus(0.22, 0.03, 14, 32), accentMat, [0, 1.05, 0], [Math.PI / 2, 0, 0]);
+    addMesh(g, geoSphere(0.11, 24, 24), mainMat, [0, 1.18, 0]);
   } else if (type === 'k') {
-    addMesh(g, new THREE.CylinderGeometry(0.22, 0.28, 1.04, 32), mainMat, [0, 0.59, 0]);
-    addMesh(g, new THREE.CylinderGeometry(0.29, 0.29, 0.06, 32), accentMat, [0, 1.14, 0]);
-    addMesh(g, new THREE.BoxGeometry(0.12, 0.24, 0.12), accentMat, [0, 1.29, 0]);
-    addMesh(g, new THREE.BoxGeometry(0.24, 0.08, 0.12), accentMat, [0, 1.32, 0]);
+    addMesh(g, geoCylinder(0.22, 0.28, 1.04, 32), mainMat, [0, 0.59, 0]);
+    addMesh(g, geoCylinder(0.29, 0.29, 0.06, 32), accentMat, [0, 1.14, 0]);
+    addMesh(g, geoBox(0.12, 0.24, 0.12), accentMat, [0, 1.29, 0]);
+    addMesh(g, geoBox(0.24, 0.08, 0.12), accentMat, [0, 1.32, 0]);
   }
   return g;
 }
@@ -357,53 +387,53 @@ function buildMinimalistPiece(type, colorSide, mainMat, accentMat) {
 function buildMedievalPiece(type, colorSide, mainMat, accentMat) {
   const g = new THREE.Group();
   // Heavy stone plinth
-  addMesh(g, new THREE.CylinderGeometry(0.35, 0.38, 0.12, 12), mainMat, [0, 0.06, 0]);
-  addMesh(g, new THREE.CylinderGeometry(0.31, 0.34, 0.06, 12), accentMat, [0, 0.15, 0]);
+  addMesh(g, geoCylinder(0.35, 0.38, 0.12, 12), mainMat, [0, 0.06, 0]);
+  addMesh(g, geoCylinder(0.31, 0.34, 0.06, 12), accentMat, [0, 0.15, 0]);
 
   if (type === 'p') {
     // Templar helm & shield silhouette
-    addMesh(g, new THREE.CylinderGeometry(0.18, 0.26, 0.44, 10), mainMat, [0, 0.38, 0]);
-    addMesh(g, new THREE.CylinderGeometry(0.17, 0.19, 0.24, 10), mainMat, [0, 0.72, 0]);
-    addMesh(g, new THREE.ConeGeometry(0.19, 0.16, 10), accentMat, [0, 0.90, 0]);
-    addMesh(g, new THREE.BoxGeometry(0.24, 0.04, 0.24), accentMat, [0, 0.72, 0]);
+    addMesh(g, geoCylinder(0.18, 0.26, 0.44, 10), mainMat, [0, 0.38, 0]);
+    addMesh(g, geoCylinder(0.17, 0.19, 0.24, 10), mainMat, [0, 0.72, 0]);
+    addMesh(g, geoCone(0.19, 0.16, 10), accentMat, [0, 0.90, 0]);
+    addMesh(g, geoBox(0.24, 0.04, 0.24), accentMat, [0, 0.72, 0]);
   } else if (type === 'r') {
-    addMesh(g, new THREE.CylinderGeometry(0.26, 0.31, 0.64, 8), mainMat, [0, 0.48, 0]);
-    addMesh(g, new THREE.CylinderGeometry(0.32, 0.27, 0.14, 8), accentMat, [0, 0.85, 0]);
+    addMesh(g, geoCylinder(0.26, 0.31, 0.64, 8), mainMat, [0, 0.48, 0]);
+    addMesh(g, geoCylinder(0.32, 0.27, 0.14, 8), accentMat, [0, 0.85, 0]);
     for (let i = 0; i < 4; i++) {
       const a = (i / 4) * Math.PI * 2;
-      addMesh(g, new THREE.BoxGeometry(0.16, 0.18, 0.12), mainMat, [Math.cos(a) * 0.25, 1.00, Math.sin(a) * 0.25], [0, -a, 0]);
+      addMesh(g, geoBox(0.16, 0.18, 0.12), mainMat, [Math.cos(a) * 0.25, 1.00, Math.sin(a) * 0.25], [0, -a, 0]);
     }
   } else if (type === 'n') {
     const dir = colorSide === 'w' ? -1 : 1;
-    addMesh(g, new THREE.CylinderGeometry(0.22, 0.28, 0.38, 8), mainMat, [0, 0.36, 0]);
-    addMesh(g, new THREE.BoxGeometry(0.24, 0.42, 0.30), mainMat, [0, 0.68, 0.02 * dir], [0.18 * dir, 0, 0]);
+    addMesh(g, geoCylinder(0.22, 0.28, 0.38, 8), mainMat, [0, 0.36, 0]);
+    addMesh(g, geoBox(0.24, 0.42, 0.30), mainMat, [0, 0.68, 0.02 * dir], [0.18 * dir, 0, 0]);
     // Armored horse chamfron
-    addMesh(g, new THREE.ConeGeometry(0.15, 0.38, 4), accentMat, [0, 0.86, 0.18 * dir], [Math.PI * 0.58 * dir, 0, 0]);
-    addMesh(g, new THREE.BoxGeometry(0.08, 0.34, 0.12), accentMat, [0, 0.86, -0.10 * dir], [-0.25 * dir, 0, 0]);
+    addMesh(g, geoCone(0.15, 0.38, 4), accentMat, [0, 0.86, 0.18 * dir], [Math.PI * 0.58 * dir, 0, 0]);
+    addMesh(g, geoBox(0.08, 0.34, 0.12), accentMat, [0, 0.86, -0.10 * dir], [-0.25 * dir, 0, 0]);
   } else if (type === 'b') {
-    addMesh(g, new THREE.CylinderGeometry(0.15, 0.27, 0.68, 10), mainMat, [0, 0.50, 0]);
-    addMesh(g, new THREE.ConeGeometry(0.21, 0.36, 10), mainMat, [0, 1.00, 0]);
-    addMesh(g, new THREE.TorusGeometry(0.19, 0.03, 10, 16), accentMat, [0, 0.84, 0], [Math.PI / 2, 0, 0]);
-    addMesh(g, new THREE.BoxGeometry(0.06, 0.20, 0.06), accentMat, [0, 1.24, 0]);
-    addMesh(g, new THREE.BoxGeometry(0.16, 0.05, 0.06), accentMat, [0, 1.26, 0]);
+    addMesh(g, geoCylinder(0.15, 0.27, 0.68, 10), mainMat, [0, 0.50, 0]);
+    addMesh(g, geoCone(0.21, 0.36, 10), mainMat, [0, 1.00, 0]);
+    addMesh(g, geoTorus(0.19, 0.03, 10, 16), accentMat, [0, 0.84, 0], [Math.PI / 2, 0, 0]);
+    addMesh(g, geoBox(0.06, 0.20, 0.06), accentMat, [0, 1.24, 0]);
+    addMesh(g, geoBox(0.16, 0.05, 0.06), accentMat, [0, 1.26, 0]);
   } else if (type === 'q') {
-    addMesh(g, new THREE.CylinderGeometry(0.19, 0.30, 0.78, 10), mainMat, [0, 0.55, 0]);
-    addMesh(g, new THREE.CylinderGeometry(0.27, 0.21, 0.18, 10), accentMat, [0, 1.02, 0]);
+    addMesh(g, geoCylinder(0.19, 0.30, 0.78, 10), mainMat, [0, 0.55, 0]);
+    addMesh(g, geoCylinder(0.27, 0.21, 0.18, 10), accentMat, [0, 1.02, 0]);
     for (let i = 0; i < 6; i++) {
       const a = (i / 6) * Math.PI * 2;
-      addMesh(g, new THREE.BoxGeometry(0.08, 0.16, 0.08), accentMat, [Math.cos(a) * 0.22, 1.18, Math.sin(a) * 0.22], [0, -a, 0]);
+      addMesh(g, geoBox(0.08, 0.16, 0.08), accentMat, [Math.cos(a) * 0.22, 1.18, Math.sin(a) * 0.22], [0, -a, 0]);
     }
-    addMesh(g, new THREE.OctahedronGeometry(0.10, 0), accentMat, [0, 1.25, 0]);
+    addMesh(g, geoOctahedron(0.10, 0), accentMat, [0, 1.25, 0]);
   } else if (type === 'k') {
-    addMesh(g, new THREE.CylinderGeometry(0.22, 0.32, 0.86, 10), mainMat, [0, 0.60, 0]);
-    addMesh(g, new THREE.CylinderGeometry(0.30, 0.24, 0.20, 10), accentMat, [0, 1.12, 0]);
+    addMesh(g, geoCylinder(0.22, 0.32, 0.86, 10), mainMat, [0, 0.60, 0]);
+    addMesh(g, geoCylinder(0.30, 0.24, 0.20, 10), accentMat, [0, 1.12, 0]);
     for (let i = 0; i < 4; i++) {
       const a = (i / 4) * Math.PI * 2 + Math.PI / 4;
-      addMesh(g, new THREE.ConeGeometry(0.06, 0.18, 4), accentMat, [Math.cos(a) * 0.24, 1.30, Math.sin(a) * 0.24]);
+      addMesh(g, geoCone(0.06, 0.18, 4), accentMat, [Math.cos(a) * 0.24, 1.30, Math.sin(a) * 0.24]);
     }
     // Broadsword crown cross
-    addMesh(g, new THREE.BoxGeometry(0.09, 0.30, 0.09), accentMat, [0, 1.40, 0]);
-    addMesh(g, new THREE.BoxGeometry(0.24, 0.07, 0.09), accentMat, [0, 1.42, 0]);
+    addMesh(g, geoBox(0.09, 0.30, 0.09), accentMat, [0, 1.40, 0]);
+    addMesh(g, geoBox(0.24, 0.07, 0.09), accentMat, [0, 1.42, 0]);
   }
   return g;
 }

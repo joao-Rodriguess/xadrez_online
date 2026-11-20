@@ -250,6 +250,14 @@ export class Scene3D {
     this._menuOrbitAngle = 0.65;
     this._currentCameraPreset = 'w';
 
+    // Shared reusable geometries & cached ghost materials/meshes for 60+ FPS animations
+    this._sharedSparkGeo = new THREE.OctahedronGeometry(0.036, 0);
+    this._sharedCaptureGeo = new THREE.OctahedronGeometry(0.06, 0);
+    this._sharedShockwaveGeo = new THREE.RingGeometry(0.18, 0.28, 32);
+    this._ghostPieceCache = new Map();
+    this._ghostMoveMat = null;
+    this._ghostCaptureMat = null;
+
     // Selection, hover preview & 3D Hold-and-Drag state
     this.selectedSquare = null;
     this.legalMoveTargets = new Map(); // toSquare -> moveObj
@@ -661,25 +669,12 @@ export class Scene3D {
     }
   }
 
-  _renderGhostPreview(targetSquare) {
-    this._clearGhostPreview();
-    if (!this.selectedSquare || !this.pieceMeshes.has(this.selectedSquare)) return;
-
-    const sourcePiece = this.pieceMeshes.get(this.selectedSquare);
-    const { type, color } = sourcePiece.userData;
-    const pieceCfg = this.lastCustomization?.pieces?.[type];
-    const ghostMesh = buildChessPiece3D(type, color, pieceCfg);
-
-    const isCapture = Boolean(this.legalMoveTargets.get(targetSquare)?.captured);
-    const ghostColor = isCapture ? '#fb7185' : '#34d399';
-
-    ghostMesh.traverse((child) => {
-      if (child.isMesh) {
-        child.castShadow = false;
-        child.receiveShadow = false;
-        child.material = new THREE.MeshPhysicalMaterial({
-          color: ghostColor,
-          emissive: ghostColor,
+  _getGhostMaterial(isCapture) {
+    if (isCapture) {
+      if (!this._ghostCaptureMat) {
+        this._ghostCaptureMat = new THREE.MeshPhysicalMaterial({
+          color: '#fb7185',
+          emissive: '#fb7185',
           emissiveIntensity: 0.75,
           transparent: true,
           opacity: 0.42,
@@ -688,12 +683,70 @@ export class Scene3D {
           depthWrite: false,
         });
       }
-    });
+      return this._ghostCaptureMat;
+    }
+    if (!this._ghostMoveMat) {
+      this._ghostMoveMat = new THREE.MeshPhysicalMaterial({
+        color: '#34d399',
+        emissive: '#34d399',
+        emissiveIntensity: 0.75,
+        transparent: true,
+        opacity: 0.42,
+        roughness: 0.2,
+        metalness: 0.1,
+        depthWrite: false,
+      });
+    }
+    return this._ghostMoveMat;
+  }
+
+  _renderGhostPreview(targetSquare) {
+    if (!this.selectedSquare || !this.pieceMeshes.has(this.selectedSquare)) {
+      this._clearGhostPreview();
+      return;
+    }
+
+    const sourcePiece = this.pieceMeshes.get(this.selectedSquare);
+    const { type, color } = sourcePiece.userData;
+    const pieceCfg = this.lastCustomization?.pieces?.[type];
+    const cacheKey = `${type}:${color}:${pieceCfg?.style || 'staunton'}:${pieceCfg?.heightScale || 1}`;
+
+    if (!this._ghostPieceCache) {
+      this._ghostPieceCache = new Map();
+    }
+
+    const isCapture = Boolean(this.legalMoveTargets.get(targetSquare)?.captured);
+    const ghostMat = this._getGhostMaterial(isCapture);
+
+    let ghostMesh = this._ghostPieceCache.get(cacheKey);
+    if (!ghostMesh) {
+      ghostMesh = buildChessPiece3D(type, color, pieceCfg);
+      ghostMesh.traverse((child) => {
+        if (child.isMesh) {
+          child.castShadow = false;
+          child.receiveShadow = false;
+          child.material = ghostMat;
+        }
+      });
+      ghostMesh.userData.ghostFloat = true;
+      ghostMesh.userData.lastMat = ghostMat;
+      this._ghostPieceCache.set(cacheKey, ghostMesh);
+    } else if (ghostMesh.userData.lastMat !== ghostMat) {
+      ghostMesh.traverse((child) => {
+        if (child.isMesh) {
+          child.material = ghostMat;
+        }
+      });
+      ghostMesh.userData.lastMat = ghostMat;
+    }
+
+    if (this.ghostGroup.children.length !== 1 || this.ghostGroup.children[0] !== ghostMesh) {
+      this._clearGhostPreview();
+      this.ghostGroup.add(ghostMesh);
+    }
 
     const { x, z } = squareToCoords(targetSquare);
     ghostMesh.position.set(x, 0.04, z);
-    ghostMesh.userData.ghostFloat = true;
-    this.ghostGroup.add(ghostMesh);
   }
 
   _getAspectZoomMultiplier() {
@@ -1118,7 +1171,7 @@ export class Scene3D {
 
   spawnCaptureParticles(x, y, z, colorHex) {
     const count = 22;
-    const geo = new THREE.OctahedronGeometry(0.06, 0);
+    const geo = this._sharedCaptureGeo;
     for (let i = 0; i < count; i++) {
       const mat = new THREE.MeshStandardMaterial({
         color: colorHex,
@@ -1144,7 +1197,7 @@ export class Scene3D {
   }
 
   spawnTrailSpark(x, y, z, colorHex) {
-    const geo = new THREE.OctahedronGeometry(0.036, 0);
+    const geo = this._sharedSparkGeo;
     const mat = new THREE.MeshBasicMaterial({
       color: colorHex,
       transparent: true,
@@ -1162,7 +1215,7 @@ export class Scene3D {
 
   spawnLandingShockwave(x, z, colorHex = '#38bdf8') {
     const ring = new THREE.Mesh(
-      new THREE.RingGeometry(0.18, 0.28, 32),
+      this._sharedShockwaveGeo,
       new THREE.MeshBasicMaterial({
         color: colorHex,
         side: THREE.DoubleSide,
@@ -1263,9 +1316,11 @@ export class Scene3D {
     // Active piece move animations with dynamic flight tilt, trail sparks & landing shockwave
     for (let i = this.activeAnimations.length - 1; i >= 0; i--) {
       const anim = this.activeAnimations[i];
-      anim.progress += dt / anim.duration;
+      const animDt = anim.firstFrame === false ? dt : 0.016;
+      anim.firstFrame = false;
+      anim.progress += animDt / anim.duration;
       const t = Math.min(1, anim.progress);
-      const ease = t * t * (3 - 2 * t);
+      const ease = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
       const baseY = THREE.MathUtils.lerp(anim.startPos.y, anim.endPos.y, ease);
       anim.group.position.x = THREE.MathUtils.lerp(anim.startPos.x, anim.endPos.x, ease);
       anim.group.position.z = THREE.MathUtils.lerp(anim.startPos.z, anim.endPos.z, ease);
@@ -1277,8 +1332,8 @@ export class Scene3D {
       anim.group.rotation.z = THREE.MathUtils.clamp(-dx * tilt, -0.32, 0.32);
       anim.group.rotation.x = THREE.MathUtils.clamp(dz * tilt, -0.32, 0.32);
 
-      anim.sparkAcc = (anim.sparkAcc || 0) + dt;
-      if (anim.sparkAcc > 0.035 && anim.trailColor) {
+      anim.sparkAcc = (anim.sparkAcc || 0) + animDt;
+      if (anim.sparkAcc > 0.055 && anim.trailColor) {
         anim.sparkAcc = 0;
         this.spawnTrailSpark(anim.group.position.x, anim.group.position.y, anim.group.position.z, anim.trailColor);
       }
@@ -1301,7 +1356,9 @@ export class Scene3D {
       sw.material.opacity = (1 - p) * 0.85;
       if (p >= 1) {
         this.effectsGroup.remove(sw);
-        sw.geometry.dispose();
+        if (sw.geometry !== this._sharedShockwaveGeo) {
+          sw.geometry.dispose();
+        }
         sw.material.dispose();
         this.shockwaves.splice(i, 1);
       }
@@ -1348,6 +1405,7 @@ export class Scene3D {
       p.scale.setScalar(Math.max(0.01, alpha));
       if (p.userData.life >= p.userData.maxLife) {
         this.particlesGroup.remove(p);
+        p.material?.dispose();
         this.particles.splice(i, 1);
       }
     }

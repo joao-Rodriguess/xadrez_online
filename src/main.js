@@ -580,7 +580,38 @@ class ChessRoyaleApp {
       this.hintMove = null;
       this.historyPreviewPly = null;
 
-      this.scene3d.syncBoard(this.chess.board(), this.customization);
+      let onlineMoveAnim = null;
+      const lm = room.lastMove;
+      const pieceAtFrom = lm?.from ? this.scene3d.pieceMeshes.get(lm.from) : null;
+      const pieceAfter = lm?.to ? this.chess.get(lm.to) : null;
+      const prevMoveCount = this._onlineMovesList?.length || 0;
+      const nextMoveCount = Array.isArray(room.moves)
+        ? room.moves.length
+        : Object.keys(room.moves || {}).length;
+      const isSingleStepAdvance = Math.abs(nextMoveCount - prevMoveCount) <= 1;
+      const wasPawnDiagEmpty =
+        pieceAtFrom?.userData?.type === 'p' &&
+        lm.from[0] !== lm.to[0] &&
+        !this.scene3d.pieceMeshes.has(lm.to);
+      const isKingCastle =
+        pieceAtFrom?.userData?.type === 'k' &&
+        Math.abs(lm.from.charCodeAt(0) - lm.to.charCodeAt(0)) > 1;
+      const isPromotion =
+        pieceAtFrom && pieceAfter && pieceAtFrom.userData.type !== pieceAfter.type;
+
+      if (
+        isSingleStepAdvance &&
+        pieceAtFrom &&
+        pieceAfter &&
+        pieceAtFrom.userData.color === pieceAfter.color &&
+        !wasPawnDiagEmpty &&
+        !isKingCastle &&
+        !isPromotion
+      ) {
+        onlineMoveAnim = { from: lm.from, to: lm.to };
+      }
+
+      this.scene3d.syncBoard(this.chess.board(), this.customization, onlineMoveAnim);
       if (isGameCheck(this.chess)) audioFX.playCheck();
       else audioFX.playMove();
     }
@@ -942,7 +973,7 @@ class ChessRoyaleApp {
       this.scene3d.setCameraView(this.chess.turn());
     }
 
-    this._renderAll();
+    this._renderAll(nextEvalScore);
 
     // Sync to server / Demo channel if online
     if (this.gameMode === 'online') {
@@ -1177,12 +1208,12 @@ class ChessRoyaleApp {
     });
   }
 
-  _renderAll() {
+  _renderAll(precomputedEval = null) {
     this._renderHighlights();
     this._renderClocks();
     this._renderPlayerCards();
     this._renderMoveHistory();
-    this._renderEvalBar();
+    this._renderEvalBar(precomputedEval);
     this._renderEvalChart();
     this._updateTurnBanner();
   }
@@ -1461,8 +1492,8 @@ class ChessRoyaleApp {
     }
   }
 
-  _renderEvalBar() {
-    const res = evaluateBoardScore(this.chess.fen());
+  _renderEvalBar(precomputedEval = null) {
+    const res = precomputedEval || evaluateBoardScore(this.chess.fen());
     const fill = document.getElementById('eval-bar-fill');
     const lbl = document.getElementById('eval-score-label');
 

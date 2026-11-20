@@ -669,7 +669,7 @@ function computeRootAntiRepetitionPenalty(chess, move, historyCounts, recentMove
   return penalty;
 }
 
-function searchBestMoveSync(fen, level = 3, historyContext = {}) {
+export function searchBestMoveSync(fen, level = 3, historyContext = {}) {
   const chess = new Chess(fen);
   const moves = chess.moves({ verbose: true });
   if (moves.length === 0) return null;
@@ -778,16 +778,68 @@ function searchBestMoveSync(fen, level = 3, historyContext = {}) {
   return bestOverallMove;
 }
 
+let _botWorker = null;
+let _workerRequestId = 0;
+const _pendingWorkerRequests = new Map();
+
+function _getBotWorker() {
+  if (typeof Worker === 'undefined') return null;
+  if (_botWorker) return _botWorker;
+  try {
+    const worker = new Worker(new URL('./botWorker.js', import.meta.url), { type: 'module' });
+    worker.onmessage = (event) => {
+      const { id, move, error } = event.data || {};
+      const entry = _pendingWorkerRequests.get(id);
+      if (!entry) return;
+      _pendingWorkerRequests.delete(id);
+      if (error) entry.reject(new Error(error));
+      else entry.resolve(move ?? null);
+    };
+    worker.onerror = () => {
+      for (const [id, entry] of _pendingWorkerRequests.entries()) {
+        _pendingWorkerRequests.delete(id);
+        entry.reject(new Error('Bot worker crashed'));
+      }
+      try {
+        worker.terminate();
+      } catch {
+        // Ignore terminate errors
+      }
+      _botWorker = null;
+    };
+    _botWorker = worker;
+    return _botWorker;
+  } catch {
+    return null;
+  }
+}
+
+function _runWorkerSearch(fen, level, historyContext) {
+  const worker = _getBotWorker();
+  if (!worker) return null;
+  return new Promise((resolve, reject) => {
+    const id = ++_workerRequestId;
+    _pendingWorkerRequests.set(id, { resolve, reject });
+    try {
+      worker.postMessage({ id, fen, level, historyContext });
+    } catch (err) {
+      _pendingWorkerRequests.delete(id);
+      reject(err);
+    }
+  });
+}
+
 /**
  * Async wrapper with a consistent minimum think duration so bots at every
  * difficulty level (including Grandmaster) play at a readable, steady pace.
+ * Uses a dedicated Web Worker in browser environments to keep 3D animations at 60+ FPS.
  */
 export function getBestMove(fen, level = 3, minThinkTimeMs = 1200, historyContext = {}) {
   return new Promise((resolve) => {
     const startTick = performance.now();
-    const initialYield = 40;
-    setTimeout(() => {
-      const move = searchBestMoveSync(fen, level, historyContext);
+    const initialYield = minThinkTimeMs >= 900 ? 480 : 40;
+
+    const finishWithCadence = (move) => {
       const elapsed = performance.now() - startTick;
       const remaining = Math.max(0, minThinkTimeMs - elapsed);
       if (remaining > 0) {
@@ -795,6 +847,21 @@ export function getBestMove(fen, level = 3, minThinkTimeMs = 1200, historyContex
       } else {
         resolve(move);
       }
+    };
+
+    setTimeout(async () => {
+      try {
+        const workerPromise = _runWorkerSearch(fen, level, historyContext);
+        if (workerPromise) {
+          const move = await workerPromise;
+          finishWithCadence(move);
+          return;
+        }
+      } catch {
+        // Fall through to synchronous fallback
+      }
+      const move = searchBestMoveSync(fen, level, historyContext);
+      finishWithCadence(move);
     }, initialYield);
   });
 }
