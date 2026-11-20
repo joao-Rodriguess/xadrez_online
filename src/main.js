@@ -827,7 +827,11 @@ class ChessRoyaleApp {
 
     const fenSnapshot = this.chess.fen();
     const minThinkTimeMs = this.gameMode === 'bot_vs_bot' ? 1500 : 1150;
-    const move = await getBestMove(fenSnapshot, this.botLevel, minThinkTimeMs);
+    const historyContext = {
+      recentFens: this.moveSnapshots.map((s) => s.fen),
+      recentMoves: this.moveSnapshots.slice(1).map((s) => ({ from: s.from, to: s.to, san: s.san })),
+    };
+    const move = await getBestMove(fenSnapshot, this.botLevel, minThinkTimeMs, historyContext);
     this.isBotThinking = false;
 
     if (!this.gameEnded && this.chess.fen() === fenSnapshot && move) {
@@ -842,7 +846,11 @@ class ChessRoyaleApp {
   async _requestHint() {
     if (this.gameEnded || this.isBotThinking) return;
     this._toast('Calculando melhor lance...');
-    const best = await getBestMove(this.chess.fen(), 4, 220);
+    const historyContext = {
+      recentFens: this.moveSnapshots.map((s) => s.fen),
+      recentMoves: this.moveSnapshots.slice(1).map((s) => ({ from: s.from, to: s.to, san: s.san })),
+    };
+    const best = await getBestMove(this.chess.fen(), 4, 220, historyContext);
     if (best) {
       this.hintMove = { from: best.from, to: best.to };
       this._renderHighlights();

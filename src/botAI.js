@@ -111,6 +111,11 @@ function bookKeyFromFen(fen) {
   return `${parts[0]} ${parts[1]} ${parts[2]}`;
 }
 
+export function normalizeFenKey(fen) {
+  const parts = String(fen || '').split(' ');
+  return `${parts[0] || ''} ${parts[1] || 'w'} ${parts[2] || '-'} ${parts[3] || '-'}`;
+}
+
 export function isGameCheck(chess) {
   return typeof chess.isCheck === 'function' ? chess.isCheck() : chess.inCheck();
 }
@@ -147,13 +152,22 @@ export function evaluatePositionWhite(chess) {
   let blackBishops = 0;
   const whitePawnFiles = new Array(8).fill(0);
   const blackPawnFiles = new Array(8).fill(0);
+  // Track closest enemy pawn row to check passed pawns in O(1) per pawn
+  const whiteMaxRow = new Array(8).fill(-1);
+  const blackMinRow = new Array(8).fill(8);
+  let whiteKing = { r: 7, c: 4 };
+  let blackKing = { r: 0, c: 4 };
+  const piecesList = [];
 
   for (let r = 0; r < 8; r++) {
     for (let c = 0; c < 8; c++) {
       const sq = board[r][c];
       if (!sq) continue;
       const val = PIECE_VALUES[sq.type] || 0;
-      if (sq.type !== 'k') {
+      if (sq.type === 'k') {
+        if (sq.color === 'w') whiteKing = { r, c };
+        else blackKing = { r, c };
+      } else {
         if (sq.color === 'w') whiteMaterial += val;
         else blackMaterial += val;
       }
@@ -162,29 +176,83 @@ export function evaluatePositionWhite(chess) {
         else blackBishops++;
       }
       if (sq.type === 'p') {
-        if (sq.color === 'w') whitePawnFiles[c]++;
-        else blackPawnFiles[c]++;
+        if (sq.color === 'w') {
+          whitePawnFiles[c]++;
+          if (r > whiteMaxRow[c]) whiteMaxRow[c] = r;
+        } else {
+          blackPawnFiles[c]++;
+          if (r < blackMinRow[c]) blackMinRow[c] = r;
+        }
       }
+      piecesList.push({ r, c, type: sq.type, color: sq.color });
     }
   }
 
   const isEndgame = whiteMaterial < 1400 && blackMaterial < 1400;
+  const PASSED_PAWN_BONUS = [0, 15, 28, 50, 90, 150, 240, 0];
 
-  for (let r = 0; r < 8; r++) {
-    for (let c = 0; c < 8; c++) {
-      const sq = board[r][c];
-      if (!sq) continue;
-      const baseVal = PIECE_VALUES[sq.type] || 0;
-      const tableKey = sq.type === 'k' ? (isEndgame ? 'k_eg' : 'k_mg') : sq.type;
-      const table = PST[tableKey];
-      const pstRow = sq.color === 'w' ? r : 7 - r;
-      const pstBonus = table ? table[pstRow][c] : 0;
+  for (const p of piecesList) {
+    const { r, c, type, color } = p;
+    const baseVal = PIECE_VALUES[type] || 0;
+    const tableKey = type === 'k' ? (isEndgame ? 'k_eg' : 'k_mg') : type;
+    const table = PST[tableKey];
+    const pstRow = color === 'w' ? r : 7 - r;
+    const pstBonus = table ? table[pstRow][c] : 0;
 
-      if (sq.color === 'w') {
-        score += baseVal + pstBonus;
+    let positionalExtra = 0;
+
+    // Passed pawn detection & advancement bonus
+    if (type === 'p') {
+      if (color === 'w') {
+        let isPassed = true;
+        for (let adj = Math.max(0, c - 1); adj <= Math.min(7, c + 1); adj++) {
+          if (blackMinRow[adj] < r) {
+            isPassed = false;
+            break;
+          }
+        }
+        if (isPassed) positionalExtra += PASSED_PAWN_BONUS[7 - r] || 0;
       } else {
-        score -= baseVal + pstBonus;
+        let isPassed = true;
+        for (let adj = Math.max(0, c - 1); adj <= Math.min(7, c + 1); adj++) {
+          if (whiteMaxRow[adj] > r) {
+            isPassed = false;
+            break;
+          }
+        }
+        if (isPassed) positionalExtra += PASSED_PAWN_BONUS[r] || 0;
       }
+      // Central pawn control
+      if ((c === 3 || c === 4) && (r === 3 || r === 4)) positionalExtra += 18;
+    }
+
+    // Minor piece development bonus (encourage bringing Knights/Bishops off back rank in opening/midgame)
+    if (!isEndgame && (type === 'n' || type === 'b')) {
+      const homeRow = color === 'w' ? 7 : 0;
+      if (r !== homeRow) positionalExtra += 16;
+    }
+
+    // Open & semi-open file bonus for Rooks (only reward forward/connected rooks, not shuffling on back rank corners)
+    if (type === 'r') {
+      const ownPawns = color === 'w' ? whitePawnFiles[c] : blackPawnFiles[c];
+      const enemyPawns = color === 'w' ? blackPawnFiles[c] : whitePawnFiles[c];
+      if (ownPawns === 0 && enemyPawns === 0) positionalExtra += 20;
+      else if (ownPawns === 0) positionalExtra += 10;
+      if ((color === 'w' && r === 1) || (color === 'b' && r === 6)) positionalExtra += 24;
+    }
+
+    // King tropism (encourage pieces to approach enemy King)
+    if (type !== 'p' && type !== 'k') {
+      const targetKing = color === 'w' ? blackKing : whiteKing;
+      const dist = Math.abs(r - targetKing.r) + Math.abs(c - targetKing.c);
+      const weight = type === 'q' ? 2.5 : type === 'r' ? 2.0 : type === 'n' ? 1.8 : 1.4;
+      positionalExtra += Math.round((14 - dist) * weight);
+    }
+
+    if (color === 'w') {
+      score += baseVal + pstBonus + positionalExtra;
+    } else {
+      score -= baseVal + pstBonus + positionalExtra;
     }
   }
 
@@ -209,6 +277,17 @@ export function evaluatePositionWhite(chess) {
     }
   }
 
+  // Endgame / Winning Mop-Up Evaluation: drive losing King to corner & bring winning King close
+  const matDiff = whiteMaterial - blackMaterial;
+  const kingsDist = Math.abs(whiteKing.r - blackKing.r) + Math.abs(whiteKing.c - blackKing.c);
+  if (matDiff >= 150 || (isEndgame && matDiff > 0)) {
+    const blackCenterDist = Math.abs(blackKing.r - 3.5) + Math.abs(blackKing.c - 3.5);
+    score += Math.round(blackCenterDist * 28 + (14 - kingsDist) * 26);
+  } else if (matDiff <= -150 || (isEndgame && matDiff < 0)) {
+    const whiteCenterDist = Math.abs(whiteKing.r - 3.5) + Math.abs(whiteKing.c - 3.5);
+    score -= Math.round(whiteCenterDist * 28 + (14 - kingsDist) * 26);
+  }
+
   // Slight tempo bonus for side to move
   score += chess.turn() === 'w' ? 10 : -10;
 
@@ -231,17 +310,20 @@ export function evaluateBoardScore(fen) {
 }
 
 class SearchContext {
-  constructor(timeLimitMs) {
+  constructor(timeLimitMs, historyCounts = new Map()) {
     this.startTime = performance.now();
     this.timeLimitMs = timeLimitMs;
+    this.allowTimeout = false;
     this.aborted = false;
     this.nodes = 0;
     this.tt = new Map();
     this.killers = new Map();
+    this.historyCounts = historyCounts;
+    this.pathCounts = new Map();
   }
 
   checkTime() {
-    if ((this.nodes & 1023) === 0 && this.timeLimitMs > 0) {
+    if (this.allowTimeout && (this.nodes & 511) === 0 && this.timeLimitMs > 0) {
       if (performance.now() - this.startTime > this.timeLimitMs) {
         this.aborted = true;
       }
@@ -271,7 +353,7 @@ function scoreMoveForOrdering(move, ttBestKey, killersAtPly) {
     score += 50000;
   }
   if (move.san && move.san.includes('+')) {
-    score += 5000;
+    score += 400;
   }
   return score;
 }
@@ -314,6 +396,23 @@ function negamax(chess, depth, ply, alpha, beta, colorSign, ctx, useQuiescence) 
   ctx.nodes++;
   if (ctx.checkTime()) return 0;
 
+  const posKey = normalizeFenKey(chess.fen());
+  const pathSeen = (ctx.pathCounts.get(posKey) || 0) + 1;
+  const gameSeen = ctx.historyCounts.get(posKey) || 0;
+
+  // True draw-by-repetition detection in tree with mild contempt (-25 cp, never worse than sacrificing material!)
+  if (ply >= 2 && (pathSeen >= 2 || gameSeen >= 2 || (gameSeen >= 1 && pathSeen >= 2))) {
+    const staticScore = colorSign * evaluatePositionWhite(chess);
+    return staticScore > 80 ? -25 : 0;
+  }
+
+  if (isGameOver(chess)) {
+    if (isGameCheckmate(chess)) {
+      return -95000 + ply;
+    }
+    return 0;
+  }
+
   const originalAlpha = alpha;
   const fenKey = chess.fen();
   const ttEntry = ctx.tt.get(fenKey);
@@ -324,19 +423,14 @@ function negamax(chess, depth, ply, alpha, beta, colorSign, ctx, useQuiescence) 
     if (alpha >= beta) return ttEntry.value;
   }
 
-  if (isGameOver(chess)) {
-    if (isGameCheckmate(chess)) {
-      return -95000 + ply;
-    }
-    return 0;
-  }
-
   if (depth <= 0) {
     if (useQuiescence) {
       return quiescence(chess, alpha, beta, colorSign, ctx, 0);
     }
     return colorSign * evaluatePositionWhite(chess);
   }
+
+  ctx.pathCounts.set(posKey, pathSeen);
 
   const moves = chess.moves({ verbose: true });
   const killersAtPly = ctx.killers.get(ply) || [];
@@ -350,7 +444,7 @@ function negamax(chess, depth, ply, alpha, beta, colorSign, ctx, useQuiescence) 
     const score = -negamax(chess, depth - 1, ply + 1, -beta, -alpha, -colorSign, ctx, useQuiescence);
     chess.undo();
 
-    if (ctx.aborted) return 0;
+    if (ctx.aborted) break;
 
     if (score > bestValue) {
       bestValue = score;
@@ -371,7 +465,10 @@ function negamax(chess, depth, ply, alpha, beta, colorSign, ctx, useQuiescence) 
     }
   }
 
-  if (!ctx.aborted && bestMove) {
+  ctx.pathCounts.set(posKey, pathSeen - 1);
+  if (ctx.aborted) return 0;
+
+  if (bestMove) {
     let flag = 'EXACT';
     if (bestValue <= originalAlpha) flag = 'UPPER';
     else if (bestValue >= beta) flag = 'LOWER';
@@ -383,7 +480,47 @@ function negamax(chess, depth, ply, alpha, beta, colorSign, ctx, useQuiescence) 
   return bestValue;
 }
 
-function searchBestMoveSync(fen, level = 3) {
+function buildHistoryMap(recentFens = []) {
+  const map = new Map();
+  for (const f of recentFens) {
+    const key = normalizeFenKey(f);
+    map.set(key, (map.get(key) || 0) + 1);
+  }
+  return map;
+}
+
+function computeRootAntiRepetitionPenalty(chess, move, historyCounts, recentMoves = []) {
+  let penalty = 0;
+  chess.move(move);
+  const nextKey = normalizeFenKey(chess.fen());
+  const nextIsMate = isGameCheckmate(chess);
+  chess.undo();
+
+  // Never penalize checkmate!
+  if (nextIsMate) return 0;
+
+  // Moderate tie-breaker penalty: breaks loops & oscillations without ever causing material blunders
+  const repeatCount = historyCounts.get(nextKey) || 0;
+  if (repeatCount >= 2) {
+    penalty += 110;
+  } else if (repeatCount === 1) {
+    penalty += 45;
+  }
+
+  // Penalize immediate reversal of the side's own previous move (A->B then B->A without capture)
+  const lastOwnMove = recentMoves.length >= 2 ? recentMoves[recentMoves.length - 2] : null;
+  if (lastOwnMove && !move.captured && move.from === lastOwnMove.to && move.to === lastOwnMove.from) {
+    penalty += 38;
+  }
+  const prevOwnMove = recentMoves.length >= 4 ? recentMoves[recentMoves.length - 4] : null;
+  if (prevOwnMove && !move.captured && move.from === prevOwnMove.to && move.to === prevOwnMove.from) {
+    penalty += 18;
+  }
+
+  return penalty;
+}
+
+function searchBestMoveSync(fen, level = 3, historyContext = {}) {
   const chess = new Chess(fen);
   const moves = chess.moves({ verbose: true });
   if (moves.length === 0) return null;
@@ -391,6 +528,9 @@ function searchBestMoveSync(fen, level = 3) {
 
   const cfg = BOT_LEVELS[level] || BOT_LEVELS[3];
   const colorSign = chess.turn() === 'w' ? 1 : -1;
+  const recentFens = historyContext?.recentFens || [];
+  const recentMoves = historyContext?.recentMoves || [];
+  const historyCounts = buildHistoryMap(recentFens);
 
   // Use opening book for level >= 3
   if (level >= 3) {
@@ -403,14 +543,15 @@ function searchBestMoveSync(fen, level = 3) {
     }
   }
 
-  // Level 1: Novice - mix random moves with obvious capture checks
+  // Level 1: Novice - mix random moves with obvious capture checks + avoid silly loops
   if (level === 1) {
     const scored = moves.map((m) => {
+      const penalty = computeRootAntiRepetitionPenalty(chess, m, historyCounts, recentMoves);
       chess.move(m);
       const evalScore = -colorSign * evaluatePositionWhite(chess);
       chess.undo();
       const noise = (Math.random() - 0.5) * 420;
-      return { move: m, score: evalScore + noise };
+      return { move: m, score: evalScore - penalty + noise };
     });
     scored.sort((a, b) => b.score - a.score);
     const topSlice = scored.slice(0, Math.min(4, scored.length));
@@ -419,15 +560,23 @@ function searchBestMoveSync(fen, level = 3) {
 
   const timeLimitMs = level === 5 ? 900 : level === 4 ? 650 : 400;
   const useQuiescence = level >= 4;
-  const ctx = new SearchContext(timeLimitMs);
+  const ctx = new SearchContext(timeLimitMs, historyCounts);
+
+  // Precompute root penalties so search & iterative deepening avoid repetition lines
+  const rootPenalties = new Map();
+  for (const m of moves) {
+    rootPenalties.set(moveKey(m), computeRootAntiRepetitionPenalty(chess, m, historyCounts, recentMoves));
+  }
 
   let bestOverallMove = moves[0];
   let scoredCandidates = [];
 
   const maxDepth = cfg.depth;
-  const startDepth = level === 5 ? 1 : maxDepth;
+  const startDepth = 1;
 
   for (let d = startDepth; d <= maxDepth; d++) {
+    // Always complete depth 1 safely so we never fall back to an unsearched moves[0]
+    ctx.allowTimeout = d >= 2;
     const currentCandidates = [];
     const ttEntry = ctx.tt.get(fen);
     const ordered = orderMoves(moves, ttEntry?.bestMove, null);
@@ -439,27 +588,34 @@ function searchBestMoveSync(fen, level = 3) {
 
     for (const move of ordered) {
       chess.move(move);
-      const val = -negamax(chess, d - 1, 1, -beta, -alpha, -colorSign, ctx, useQuiescence);
+      const rawVal = -negamax(chess, d - 1, 1, -beta, -alpha, -colorSign, ctx, useQuiescence);
       chess.undo();
 
       if (ctx.aborted) break;
 
-      currentCandidates.push({ move, score: val });
-      if (val > bestIterScore) {
-        bestIterScore = val;
+      const penalty = rootPenalties.get(moveKey(move)) || 0;
+      const adjustedVal = rawVal - penalty;
+
+      currentCandidates.push({ move, score: adjustedVal });
+      if (adjustedVal > bestIterScore) {
+        bestIterScore = adjustedVal;
         bestInIter = move;
       }
-      if (val > alpha) {
-        alpha = val;
+      if (adjustedVal > alpha) {
+        alpha = adjustedVal;
       }
     }
 
     if (ctx.aborted) break;
     bestOverallMove = bestInIter;
     scoredCandidates = currentCandidates;
+    if (bestInIter) {
+      ctx.tt.set(fen, { depth: d, value: bestIterScore, flag: 'EXACT', bestMove: moveKey(bestInIter) });
+    }
+    if (bestIterScore > 90000) break; // Forced mate found, no need to search deeper
   }
 
-  // Controlled slight variety at level 2 & 3 so games feel organic
+  // Controlled slight variety at level 2 & 3 so games feel organic without repeating
   if (cfg.randomness > 0 && scoredCandidates.length > 1) {
     scoredCandidates.sort((a, b) => b.score - a.score);
     const bestScore = scoredCandidates[0].score;
@@ -477,12 +633,12 @@ function searchBestMoveSync(fen, level = 3) {
  * Async wrapper with a consistent minimum think duration so bots at every
  * difficulty level (including Grandmaster) play at a readable, steady pace.
  */
-export function getBestMove(fen, level = 3, minThinkTimeMs = 1200) {
+export function getBestMove(fen, level = 3, minThinkTimeMs = 1200, historyContext = {}) {
   return new Promise((resolve) => {
     const startTick = performance.now();
     const initialYield = 40;
     setTimeout(() => {
-      const move = searchBestMoveSync(fen, level);
+      const move = searchBestMoveSync(fen, level, historyContext);
       const elapsed = performance.now() - startTick;
       const remaining = Math.max(0, minThinkTimeMs - elapsed);
       if (remaining > 0) {
