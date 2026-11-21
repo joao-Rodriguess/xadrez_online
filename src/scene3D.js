@@ -61,6 +61,30 @@ export const BOARD_THEMES = {
     roughness: 0.46,
     metalness: 0.12,
   },
+  stark_tower: {
+    id: 'stark_tower',
+    label: 'Marvel • Torre Vingadores',
+    lightSquare: '#737882',
+    darkSquare: '#191d24',
+    frame: '#0d1015',
+    frameAccent: '#b8863b',
+    groutColor: '#080a0e',
+    bgColor: '#07080b',
+    roughness: 0.36,
+    metalness: 0.24,
+  },
+  gotham_noir: {
+    id: 'gotham_noir',
+    label: 'DC • Gotham Noir',
+    lightSquare: '#696b70',
+    darkSquare: '#141518',
+    frame: '#0a0b0d',
+    frameAccent: '#9c824a',
+    groutColor: '#060708',
+    bgColor: '#050608',
+    roughness: 0.50,
+    metalness: 0.18,
+  },
   classic_wood: {
     id: 'classic_wood',
     label: 'Madeira Nobre Clássica',
@@ -976,6 +1000,8 @@ export class Scene3D {
   rebuildAllPieces(boardMatrix, customization) {
     this.lastBoardMatrix = boardMatrix;
     this.lastCustomization = customization;
+    this._ghostPieceCache?.clear();
+    this._clearGhostPreview();
     this.activeAnimations = [];
     this.fallAnimation = null;
     while (this.piecesGroup.children.length > 0) {

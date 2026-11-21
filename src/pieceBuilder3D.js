@@ -19,10 +19,68 @@ export const PIECE_LABELS = {
 
 export const GEOMETRY_STYLES = {
   staunton: { id: 'staunton', label: 'Clássico Staunton', description: 'Perfis torneados tradicionais de torneio.' },
+  marvel_heroes: { id: 'marvel_heroes', label: 'Marvel (Coleção Vingadores)', description: 'Homem de Ferro, Feiticeira Escarlate, Thor, Dr. Estranho, Aranha e Capitão América.' },
+  dc_heroes: { id: 'dc_heroes', label: 'DC (Liga da Justiça)', description: 'Batman, Mulher-Maravilha, Superman, Lanterna Verde, Flash e Aquaman.' },
+  marvel_vs_dc: { id: 'marvel_vs_dc', label: 'Marvel (Brancas) vs DC (Pretas)', description: 'Confronto épico entre os principais heróis da Marvel e da DC.' },
   futuristic: { id: 'futuristic', label: 'Futurista / Cyber', description: 'Prismas facetados, anéis orbitais e núcleo neon.' },
   minimalist: { id: 'minimalist', label: 'Minimalista Bauhaus', description: 'Formas arquitetônicas puras de design moderno.' },
   medieval: { id: 'medieval', label: 'Medieval Fortaleza', description: 'Ameias góticas, elmos templários e coroas de ferro.' },
+  hero_ironman: { id: 'hero_ironman', label: 'Marvel • Homem de Ferro', description: 'Capacete Mark-85 com Reator Arc.' },
+  hero_scarlet: { id: 'hero_scarlet', label: 'Marvel • Feiticeira Escarlate', description: 'Coroa escarlate de Sokovia e magia do caos.' },
+  hero_thor: { id: 'hero_thor', label: 'Marvel • Thor (Mjolnir)', description: 'Martelo Mjolnir de Uru e elmo alado de Asgard.' },
+  hero_strange: { id: 'hero_strange', label: 'Marvel • Doutor Estranho', description: 'Manto da Levitação e Olho de Agamotto.' },
+  hero_spiderman: { id: 'hero_spiderman', label: 'Marvel • Homem-Aranha', description: 'Máscara aracnídea e lentes angulares.' },
+  hero_cap: { id: 'hero_cap', label: 'Marvel • Capitão América', description: 'Escudo concêntrico de Vibranium e elmo A.' },
+  hero_wolverine: { id: 'hero_wolverine', label: 'Marvel • Wolverine', description: 'Máscara com abas e garras de Adamantium.' },
+  hero_panther: { id: 'hero_panther', label: 'Marvel • Pantera Negra', description: 'Elmo de Wakanda e colar de Vibranium.' },
+  hero_batman: { id: 'hero_batman', label: 'DC • Batman', description: 'Capuz do Cavaleiro das Trevas e emblema morcego.' },
+  hero_wonderwoman: { id: 'hero_wonderwoman', label: 'DC • Mulher-Maravilha', description: 'Tiara amazona dourada, estrela e Laço da Verdade.' },
+  hero_superman: { id: 'hero_superman', label: 'DC • Superman', description: 'Fortaleza da Solidão e escudo pentagonal S.' },
+  hero_greenlantern: { id: 'hero_greenlantern', label: 'DC • Lanterna Verde', description: 'Bateria energética de Oa e anel esmeralda.' },
+  hero_flash: { id: 'hero_flash', label: 'DC • The Flash', description: 'Capuz velocista com asas de raio douradas.' },
+  hero_aquaman: { id: 'hero_aquaman', label: 'DC • Aquaman', description: 'Tridente dourado de Atlântida e armadura escamada.' },
+  hero_joker: { id: 'hero_joker', label: 'DC • Coringa', description: 'Cartola clássica, lapela roxa e sorriso escarlate.' },
 };
+
+export const MARVEL_ROLE_MAP = {
+  k: 'hero_ironman',
+  q: 'hero_scarlet',
+  r: 'hero_thor',
+  b: 'hero_strange',
+  n: 'hero_spiderman',
+  p: 'hero_cap',
+};
+
+export const DC_ROLE_MAP = {
+  k: 'hero_batman',
+  q: 'hero_wonderwoman',
+  r: 'hero_superman',
+  b: 'hero_greenlantern',
+  n: 'hero_flash',
+  p: 'hero_aquaman',
+};
+
+export function resolveEffectiveStyle(style, type, colorSide) {
+  if (style === 'marvel_heroes') return MARVEL_ROLE_MAP[type] || 'hero_cap';
+  if (style === 'dc_heroes') return DC_ROLE_MAP[type] || 'hero_aquaman';
+  if (style === 'marvel_vs_dc') {
+    return colorSide === 'w'
+      ? MARVEL_ROLE_MAP[type] || 'hero_cap'
+      : DC_ROLE_MAP[type] || 'hero_aquaman';
+  }
+  return style || 'staunton';
+}
+
+export function getHeroStyleBadgeText(style, type, colorSide) {
+  const effective = resolveEffectiveStyle(style, type, colorSide);
+  const info = GEOMETRY_STYLES[effective];
+  if (style === 'marvel_vs_dc') {
+    const wName = GEOMETRY_STYLES[MARVEL_ROLE_MAP[type]]?.label?.replace(/^Marvel • /, '') || 'Marvel';
+    const bName = GEOMETRY_STYLES[DC_ROLE_MAP[type]]?.label?.replace(/^DC • /, '') || 'DC';
+    return `${wName} (Brancas) vs ${bName} (Pretas)`;
+  }
+  return info?.label || 'Clássico Staunton';
+}
 
 export const MATERIAL_PRESETS = {
   marble_imperial: {
@@ -36,6 +94,30 @@ export const MATERIAL_PRESETS = {
     emissiveIntensity: 0.04,
     transmission: 0,
     clearcoat: 0.55,
+  },
+  marvel_avengers: {
+    id: 'marvel_avengers',
+    label: 'Vingadores (Titânio & Ouro)',
+    whiteColor: '#e5e7eb',
+    blackColor: '#18181b',
+    accentColor: '#c29b61',
+    metalness: 0.55,
+    roughness: 0.24,
+    emissiveIntensity: 0.16,
+    transmission: 0,
+    clearcoat: 0.65,
+  },
+  dc_justice: {
+    id: 'dc_justice',
+    label: 'Liga da Justiça (Obsidiana & Bronze)',
+    whiteColor: '#dce3ec',
+    blackColor: '#121317',
+    accentColor: '#b89158',
+    metalness: 0.48,
+    roughness: 0.28,
+    emissiveIntensity: 0.12,
+    transmission: 0,
+    clearcoat: 0.6,
   },
   royal_gold: {
     id: 'royal_gold',
@@ -120,6 +202,21 @@ export function createDefaultCustomization() {
   const pieces = {};
   for (const type of PIECE_TYPES) {
     pieces[type] = createDefaultPieceConfig('staunton', 'marble_imperial');
+  }
+  return { pieces };
+}
+
+export function createHeroSetCustomization(setId = 'staunton') {
+  let presetId = 'marble_imperial';
+  if (setId === 'marvel_heroes' || setId === 'marvel_vs_dc') presetId = 'marvel_avengers';
+  else if (setId === 'dc_heroes') presetId = 'dc_justice';
+  else if (setId === 'futuristic') presetId = 'cyber_neon';
+  else if (setId === 'medieval') presetId = 'noble_wood';
+
+  const validStyle = GEOMETRY_STYLES[setId] ? setId : 'staunton';
+  const pieces = {};
+  for (const type of PIECE_TYPES) {
+    pieces[type] = createDefaultPieceConfig(validStyle, presetId);
   }
   return { pieces };
 }
@@ -438,33 +535,338 @@ function buildMedievalPiece(type, colorSide, mainMat, accentMat) {
   return g;
 }
 
+// ---------- 5. MARVEL & DC SUPERHEROES ----------
+const _heroMaterialCache = new Map();
+
+function getHeroMat(hex, metalness = 0.25, roughness = 0.35, emissiveIntensity = 0) {
+  const key = `${hex}|${metalness}|${roughness}|${emissiveIntensity}`;
+  let mat = _heroMaterialCache.get(key);
+  if (!mat) {
+    mat = new THREE.MeshPhysicalMaterial({
+      color: new THREE.Color(hex),
+      metalness,
+      roughness,
+      emissive: emissiveIntensity > 0 ? new THREE.Color(hex) : new THREE.Color('#000000'),
+      emissiveIntensity,
+      clearcoat: 0.45,
+    });
+    _heroMaterialCache.set(key, mat);
+  }
+  return mat;
+}
+
+function geoExtrude(key, buildShapeFn, extrudeOpts = { depth: 0.08, bevelEnabled: true, bevelThickness: 0.014, bevelSize: 0.012, bevelSegments: 2 }) {
+  return getCachedGeo(`ext:${key}`, () => {
+    const shape = new THREE.Shape();
+    buildShapeFn(shape);
+    const geo = new THREE.ExtrudeGeometry(shape, extrudeOpts);
+    geo.center();
+    return geo;
+  });
+}
+
+function buildHeroPiece(heroId, type, colorSide, mainMat, accentMat) {
+  const g = new THREE.Group();
+  const dir = colorSide === 'w' ? -1 : 1; // White pieces face -Z (toward rank 8); Black face +Z
+
+  // Turned chess base & collar in side color (w/b) for instant chess readability
+  const plinth = makeLathe([
+    [0, 0], [0.36, 0], [0.36, 0.09], [0.29, 0.16], [0.27, 0.22], [0.21, 0.29], [0.001, 0.30]
+  ]);
+  addMesh(g, plinth, mainMat);
+  addMesh(g, geoTorus(0.24, 0.022, 12, 26), accentMat, [0, 0.27, 0], [Math.PI / 2, 0, 0]);
+
+  const inner = new THREE.Group();
+  const rankScaleMap = { k: 1.06, q: 1.01, r: 0.94, b: 0.96, n: 0.92, p: 0.80 };
+  const s = rankScaleMap[type] || 0.94;
+  inner.position.y = 0.28;
+  inner.scale.setScalar(s);
+
+  const torsoGeo = geoCylinder(0.17, 0.22, 0.42, 16);
+  const headGeo = geoSphere(0.165, 22, 18);
+
+  const goldMat = getHeroMat('#c9a24b', 0.78, 0.22, 0);
+  const darkGoldMat = getHeroMat('#9e7b36', 0.72, 0.26, 0);
+  const crimsonMat = getHeroMat('#8e1c24', 0.35, 0.32, 0);
+  const royalRedMat = getHeroMat('#b91c1c', 0.28, 0.34, 0);
+  const silverMat = getHeroMat('#cbd5e1', 0.75, 0.22, 0);
+  const obsidianMat = getHeroMat('#141418', 0.32, 0.42, 0);
+  const blueMat = getHeroMat('#1d4ed8', 0.25, 0.36, 0);
+  const navyMat = getHeroMat('#1e3a5f', 0.28, 0.38, 0);
+  const emeraldMat = getHeroMat('#15803d', 0.35, 0.32, 0);
+  const greenGlowMat = getHeroMat('#22c55e', 0.2, 0.25, 0.45);
+  const arcCyanMat = getHeroMat('#67e8f9', 0.1, 0.2, 0.65);
+  const chaosRedMat = getHeroMat('#ef4444', 0.15, 0.22, 0.55);
+  const whiteMat = getHeroMat('#f1f5f9', 0.12, 0.3, 0);
+  const purpleMat = getHeroMat('#581c87', 0.22, 0.4, 0);
+  const tealMat = getHeroMat('#0f766e', 0.45, 0.32, 0);
+
+  // Side armor collar strip so White vs Black teams stay distinct from above
+  addMesh(inner, geoCylinder(0.22, 0.24, 0.08, 16), mainMat, [0, 0.04, 0]);
+
+  if (heroId === 'hero_ironman') {
+    addMesh(inner, torsoGeo, crimsonMat, [0, 0.25, 0]);
+    addMesh(inner, geoBox(0.42, 0.10, 0.22), goldMat, [0, 0.41, 0]);
+    // Chest Arc Reactor
+    addMesh(inner, geoTorus(0.068, 0.015, 10, 20), silverMat, [0, 0.28, dir * 0.18]);
+    addMesh(inner, geoCylinder(0.048, 0.048, 0.025, 16), arcCyanMat, [0, 0.28, dir * 0.185], [Math.PI / 2, 0, 0]);
+    // Mark-85 Helmet & Gold Faceplate
+    addMesh(inner, headGeo, crimsonMat, [0, 0.62, 0]);
+    addMesh(inner, geoBox(0.20, 0.22, 0.08), goldMat, [0, 0.61, dir * 0.13]);
+    addMesh(inner, geoBox(0.055, 0.022, 0.03), arcCyanMat, [-0.048, 0.635, dir * 0.165]);
+    addMesh(inner, geoBox(0.055, 0.022, 0.03), arcCyanMat, [0.048, 0.635, dir * 0.165]);
+  } else if (heroId === 'hero_scarlet') {
+    addMesh(inner, torsoGeo, crimsonMat, [0, 0.25, 0]);
+    // Mantle collar & crimson cape backplate
+    addMesh(inner, geoBox(0.36, 0.24, 0.08), mainMat, [0, 0.26, -dir * 0.18], [dir * 0.18, 0, 0]);
+    addMesh(inner, headGeo, mainMat, [0, 0.61, 0]);
+    // Sokovia Scarlet Crown
+    const tiaraGeo = geoExtrude('scarlet_tiara', (sh) => {
+      sh.moveTo(-0.18, 0);
+      sh.lineTo(-0.15, 0.24);
+      sh.lineTo(-0.07, 0.11);
+      sh.lineTo(0, 0.18);
+      sh.lineTo(0.07, 0.11);
+      sh.lineTo(0.15, 0.24);
+      sh.lineTo(0.18, 0);
+      sh.lineTo(0.11, -0.05);
+      sh.lineTo(0, 0.02);
+      sh.lineTo(-0.11, -0.05);
+      sh.closePath();
+    }, { depth: 0.05, bevelEnabled: true, bevelThickness: 0.01, bevelSize: 0.008, bevelSegments: 2 });
+    addMesh(inner, tiaraGeo, royalRedMat, [0, 0.72, dir * 0.11]);
+    // Chaos magic orb
+    addMesh(inner, geoSphere(0.075, 16, 14), chaosRedMat, [0, 0.94, 0]);
+    addMesh(inner, geoTorus(0.115, 0.012, 8, 20), chaosRedMat, [0, 0.94, 0], [Math.PI / 3, 0.4, 0]);
+  } else if (heroId === 'hero_thor') {
+    addMesh(inner, torsoGeo, navyMat, [0, 0.25, 0]);
+    // Crimson cape
+    addMesh(inner, geoBox(0.34, 0.36, 0.07), crimsonMat, [0, 0.25, -dir * 0.19], [dir * 0.15, 0, 0]);
+    // 4 Asgardian chest discs
+    for (const [dx, dy] of [[-0.07, 0.33], [0.07, 0.33], [-0.06, 0.21], [0.06, 0.21]]) {
+      addMesh(inner, geoCylinder(0.036, 0.036, 0.02, 14), silverMat, [dx, dy, dir * 0.18], [Math.PI / 2, 0, 0]);
+    }
+    // Winged helmet
+    addMesh(inner, headGeo, silverMat, [0, 0.62, 0]);
+    const wingGeo = geoExtrude('thor_wing', (sh) => {
+      sh.moveTo(0, 0);
+      sh.lineTo(0.18, 0.22);
+      sh.lineTo(0.09, 0.26);
+      sh.lineTo(-0.02, 0.10);
+      sh.closePath();
+    }, { depth: 0.03, bevelEnabled: true, bevelThickness: 0.008, bevelSize: 0.006, bevelSegments: 1 });
+    addMesh(inner, wingGeo, silverMat, [-0.19, 0.72, 0], [0, Math.PI, 0.25]);
+    addMesh(inner, wingGeo, silverMat, [0.19, 0.72, 0], [0, 0, -0.25]);
+    // Raised Mjolnir
+    addMesh(inner, geoCylinder(0.024, 0.024, 0.34, 10), goldMat, [0.27, 0.56, dir * 0.08], [0.3 * dir, 0, -0.15]);
+    addMesh(inner, geoBox(0.24, 0.14, 0.14), silverMat, [0.30, 0.74, dir * 0.12], [0.2 * dir, 0, -0.15]);
+  } else if (heroId === 'hero_strange') {
+    addMesh(inner, torsoGeo, navyMat, [0, 0.25, 0]);
+    // High Cloak of Levitation flared collar
+    addMesh(inner, geoCylinder(0.26, 0.19, 0.24, 16, 1), crimsonMat, [0, 0.44, -dir * 0.06]);
+    addMesh(inner, geoBox(0.42, 0.26, 0.07), crimsonMat, [0, 0.48, -dir * 0.17], [-0.22 * dir, 0, 0]);
+    // Eye of Agamotto medallion
+    addMesh(inner, geoTorus(0.068, 0.016, 10, 20), goldMat, [0, 0.29, dir * 0.185]);
+    addMesh(inner, geoSphere(0.036, 12, 12), greenGlowMat, [0, 0.29, dir * 0.195]);
+    addMesh(inner, headGeo, mainMat, [0, 0.63, 0]);
+    // Eldritch mystic ring behind crown
+    addMesh(inner, geoTorus(0.24, 0.014, 10, 28), darkGoldMat, [0, 0.68, -dir * 0.14]);
+  } else if (heroId === 'hero_spiderman') {
+    addMesh(inner, torsoGeo, royalRedMat, [0, 0.25, 0]);
+    addMesh(inner, geoBox(0.42, 0.24, 0.16), navyMat, [0, 0.18, 0]);
+    // Chest spider emblem
+    addMesh(inner, geoBox(0.04, 0.09, 0.03), obsidianMat, [0, 0.30, dir * 0.185]);
+    addMesh(inner, geoBox(0.12, 0.022, 0.03), obsidianMat, [0, 0.31, dir * 0.185], [0, 0, 0.4]);
+    addMesh(inner, geoBox(0.12, 0.022, 0.03), obsidianMat, [0, 0.31, dir * 0.185], [0, 0, -0.4]);
+    // Mask & iconic white lenses with dark rims
+    addMesh(inner, headGeo, royalRedMat, [0, 0.62, 0]);
+    addMesh(inner, geoBox(0.085, 0.065, 0.04), obsidianMat, [-0.065, 0.64, dir * 0.145], [0, -0.25 * dir, -0.28]);
+    addMesh(inner, geoBox(0.085, 0.065, 0.04), obsidianMat, [0.065, 0.64, dir * 0.145], [0, 0.25 * dir, 0.28]);
+    addMesh(inner, geoBox(0.062, 0.042, 0.045), whiteMat, [-0.065, 0.64, dir * 0.152], [0, -0.25 * dir, -0.28]);
+    addMesh(inner, geoBox(0.062, 0.042, 0.045), whiteMat, [0.065, 0.64, dir * 0.152], [0, 0.25 * dir, 0.28]);
+  } else if (heroId === 'hero_cap') {
+    addMesh(inner, torsoGeo, navyMat, [0, 0.25, 0]);
+    addMesh(inner, headGeo, navyMat, [0, 0.62, 0]);
+    addMesh(inner, geoBox(0.06, 0.06, 0.04), silverMat, [0, 0.69, dir * 0.15]);
+    // Concentric Vibranium Shield mounted cleanly on front-left/chest
+    const shieldPos = [0, 0.31, dir * 0.23];
+    const shieldRot = [Math.PI / 2, 0, 0];
+    addMesh(inner, geoCylinder(0.24, 0.24, 0.035, 28), royalRedMat, shieldPos, shieldRot);
+    addMesh(inner, geoCylinder(0.185, 0.185, 0.042, 28), whiteMat, shieldPos, shieldRot);
+    addMesh(inner, geoCylinder(0.13, 0.13, 0.048, 28), royalRedMat, shieldPos, shieldRot);
+    addMesh(inner, geoCylinder(0.08, 0.08, 0.054, 24), blueMat, shieldPos, shieldRot);
+    addMesh(inner, geoOctahedron(0.038, 0), whiteMat, [0, 0.31, dir * 0.26]);
+  } else if (heroId === 'hero_wolverine') {
+    addMesh(inner, torsoGeo, goldMat, [0, 0.25, 0]);
+    addMesh(inner, geoBox(0.44, 0.10, 0.22), obsidianMat, [0, 0.40, 0]);
+    addMesh(inner, headGeo, goldMat, [0, 0.62, 0]);
+    // Swept Wolverine cowl fins
+    const finGeo = geoExtrude('wolverine_fin', (sh) => {
+      sh.moveTo(0, 0);
+      sh.lineTo(0.22, 0.20);
+      sh.lineTo(0.12, 0.25);
+      sh.lineTo(-0.04, 0.08);
+      sh.closePath();
+    }, { depth: 0.04, bevelEnabled: true, bevelThickness: 0.01, bevelSize: 0.008, bevelSegments: 1 });
+    addMesh(inner, finGeo, obsidianMat, [-0.15, 0.70, dir * 0.04], [0, Math.PI, 0.15]);
+    addMesh(inner, finGeo, obsidianMat, [0.15, 0.70, dir * 0.04], [0, 0, -0.15]);
+    // 3 Adamantium claws extending on each side
+    for (const sideX of [-0.24, 0.24]) {
+      for (const dy of [-0.035, 0, 0.035]) {
+        addMesh(inner, geoBox(0.016, 0.018, 0.28), silverMat, [sideX, 0.24 + dy, dir * 0.18], [-0.22 * dir, 0, 0]);
+      }
+    }
+  } else if (heroId === 'hero_panther') {
+    addMesh(inner, torsoGeo, obsidianMat, [0, 0.25, 0]);
+    // Wakandan silver fang necklace
+    for (let i = -3; i <= 3; i++) {
+      const a = i * 0.35;
+      addMesh(inner, geoCone(0.018, 0.07, 6), silverMat, [Math.sin(a) * 0.19, 0.42, dir * Math.cos(a) * 0.19], [Math.PI * 0.85, 0, 0]);
+    }
+    addMesh(inner, headGeo, obsidianMat, [0, 0.62, 0]);
+    // Pointed panther ears & silver eyes
+    addMesh(inner, geoCone(0.045, 0.13, 4), obsidianMat, [-0.10, 0.79, -dir * 0.02]);
+    addMesh(inner, geoCone(0.045, 0.13, 4), obsidianMat, [0.10, 0.79, -dir * 0.02]);
+    addMesh(inner, geoBox(0.055, 0.02, 0.03), silverMat, [-0.05, 0.635, dir * 0.16]);
+    addMesh(inner, geoBox(0.055, 0.02, 0.03), silverMat, [0.05, 0.635, dir * 0.16]);
+    addMesh(inner, geoTorus(0.18, 0.014, 8, 22), purpleMat, [0, 0.45, 0], [Math.PI / 2, 0, 0]);
+  } else if (heroId === 'hero_batman') {
+    addMesh(inner, torsoGeo, mainMat, [0, 0.25, 0]);
+    // Broad cape mantle shoulders
+    addMesh(inner, geoBox(0.46, 0.14, 0.24), obsidianMat, [0, 0.39, -dir * 0.03]);
+    addMesh(inner, geoBox(0.42, 0.34, 0.07), obsidianMat, [0, 0.24, -dir * 0.19], [dir * 0.18, 0, 0]);
+    // Utility bronze belt & chest bat crest
+    addMesh(inner, geoTorus(0.21, 0.02, 10, 22), darkGoldMat, [0, 0.10, 0], [Math.PI / 2, 0, 0]);
+    addMesh(inner, geoCylinder(0.085, 0.085, 0.022, 18), darkGoldMat, [0, 0.29, dir * 0.185], [Math.PI / 2, 0, 0]);
+    addMesh(inner, geoBox(0.11, 0.035, 0.03), obsidianMat, [0, 0.29, dir * 0.195]);
+    // Dark Cowl & Tall Bat Ears
+    addMesh(inner, headGeo, obsidianMat, [0, 0.62, 0]);
+    addMesh(inner, geoCone(0.042, 0.22, 4), obsidianMat, [-0.11, 0.84, -dir * 0.02]);
+    addMesh(inner, geoCone(0.042, 0.22, 4), obsidianMat, [0.11, 0.84, -dir * 0.02]);
+    addMesh(inner, geoBox(0.05, 0.018, 0.03), whiteMat, [-0.048, 0.63, dir * 0.16]);
+    addMesh(inner, geoBox(0.05, 0.018, 0.03), whiteMat, [0.048, 0.63, dir * 0.16]);
+  } else if (heroId === 'hero_wonderwoman') {
+    addMesh(inner, torsoGeo, crimsonMat, [0, 0.25, 0]);
+    addMesh(inner, geoCylinder(0.205, 0.225, 0.13, 16), navyMat, [0, 0.12, 0]);
+    // Coiled Golden Lasso of Truth & WW chest eagle bar
+    addMesh(inner, geoTorus(0.235, 0.022, 10, 24), goldMat, [0, 0.09, 0], [Math.PI / 2, 0, 0]);
+    addMesh(inner, geoBox(0.20, 0.045, 0.04), goldMat, [0, 0.34, dir * 0.175]);
+    // Crown & Amazonian Tiara + Red Star
+    addMesh(inner, headGeo, mainMat, [0, 0.62, 0]);
+    const wwTiara = geoExtrude('ww_tiara', (sh) => {
+      sh.moveTo(-0.16, 0);
+      sh.lineTo(-0.09, 0.07);
+      sh.lineTo(0, 0.14);
+      sh.lineTo(0.09, 0.07);
+      sh.lineTo(0.16, 0);
+      sh.lineTo(0.14, -0.04);
+      sh.lineTo(0, 0.02);
+      sh.lineTo(-0.14, -0.04);
+      sh.closePath();
+    }, { depth: 0.04, bevelEnabled: true, bevelThickness: 0.008, bevelSize: 0.006, bevelSegments: 2 });
+    addMesh(inner, wwTiara, goldMat, [0, 0.72, dir * 0.12]);
+    addMesh(inner, geoOctahedron(0.032, 0), royalRedMat, [0, 0.74, dir * 0.155]);
+  } else if (heroId === 'hero_superman') {
+    addMesh(inner, torsoGeo, blueMat, [0, 0.25, 0]);
+    addMesh(inner, geoBox(0.36, 0.36, 0.07), crimsonMat, [0, 0.25, -dir * 0.19], [dir * 0.18, 0, 0]);
+    // Pentagonal Superman S Shield
+    const shieldGeo = geoExtrude('supes_shield', (sh) => {
+      sh.moveTo(-0.09, 0.07);
+      sh.lineTo(0.09, 0.07);
+      sh.lineTo(0.12, 0.01);
+      sh.lineTo(0, -0.10);
+      sh.lineTo(-0.12, 0.01);
+      sh.closePath();
+    }, { depth: 0.03, bevelEnabled: true, bevelThickness: 0.008, bevelSize: 0.006, bevelSegments: 2 });
+    addMesh(inner, shieldGeo, goldMat, [0, 0.30, dir * 0.185]);
+    addMesh(inner, shieldGeo, royalRedMat, [0, 0.30, dir * 0.194], [0, 0, 0], [0.76, 0.76, 1]);
+    // Crown
+    addMesh(inner, headGeo, mainMat, [0, 0.62, 0]);
+    addMesh(inner, geoBox(0.24, 0.10, 0.22), obsidianMat, [0, 0.75, -dir * 0.02]);
+  } else if (heroId === 'hero_greenlantern') {
+    addMesh(inner, torsoGeo, emeraldMat, [0, 0.25, 0]);
+    addMesh(inner, geoBox(0.42, 0.10, 0.22), obsidianMat, [0, 0.40, 0]);
+    // Oa chest symbol
+    addMesh(inner, geoCylinder(0.075, 0.075, 0.025, 20), whiteMat, [0, 0.29, dir * 0.185], [Math.PI / 2, 0, 0]);
+    addMesh(inner, geoTorus(0.042, 0.014, 10, 20), greenGlowMat, [0, 0.29, dir * 0.198]);
+    addMesh(inner, headGeo, mainMat, [0, 0.62, 0]);
+    addMesh(inner, geoBox(0.22, 0.055, 0.12), emeraldMat, [0, 0.64, dir * 0.12]);
+    // Lantern crown core
+    addMesh(inner, geoCylinder(0.06, 0.08, 0.14, 8), greenGlowMat, [0, 0.85, 0]);
+  } else if (heroId === 'hero_flash') {
+    addMesh(inner, torsoGeo, royalRedMat, [0, 0.25, 0]);
+    addMesh(inner, geoCylinder(0.075, 0.075, 0.025, 20), whiteMat, [0, 0.30, dir * 0.185], [Math.PI / 2, 0, 0]);
+    const boltGeo = geoExtrude('flash_bolt', (sh) => {
+      sh.moveTo(0.02, 0.08);
+      sh.lineTo(-0.04, 0.01);
+      sh.lineTo(0.0, 0.01);
+      sh.lineTo(-0.03, -0.08);
+      sh.lineTo(0.04, -0.01);
+      sh.lineTo(0.0, -0.01);
+      sh.closePath();
+    }, { depth: 0.02, bevelEnabled: false });
+    addMesh(inner, boltGeo, goldMat, [0, 0.30, dir * 0.20]);
+    // Aerodynamic speedster cowl with swept golden ear-wings
+    addMesh(inner, headGeo, royalRedMat, [0, 0.62, 0]);
+    addMesh(inner, geoBox(0.028, 0.09, 0.18), goldMat, [-0.175, 0.66, -dir * 0.04], [0.22 * dir, 0, 0]);
+    addMesh(inner, geoBox(0.028, 0.09, 0.18), goldMat, [0.175, 0.66, -dir * 0.04], [0.22 * dir, 0, 0]);
+  } else if (heroId === 'hero_aquaman') {
+    addMesh(inner, torsoGeo, goldMat, [0, 0.25, 0]);
+    addMesh(inner, geoCylinder(0.21, 0.23, 0.12, 16), tealMat, [0, 0.10, 0]);
+    addMesh(inner, headGeo, mainMat, [0, 0.62, 0]);
+    addMesh(inner, geoTorus(0.15, 0.02, 10, 20), goldMat, [0, 0.72, 0], [Math.PI / 2, 0, 0]);
+    // Golden Trident of Poseidon
+    addMesh(inner, geoCylinder(0.022, 0.022, 0.85, 10), goldMat, [0.28, 0.46, dir * 0.04]);
+    addMesh(inner, geoBox(0.18, 0.028, 0.028), goldMat, [0.28, 0.86, dir * 0.04]);
+    addMesh(inner, geoCone(0.022, 0.14, 6), goldMat, [0.20, 0.94, dir * 0.04]);
+    addMesh(inner, geoCone(0.024, 0.18, 6), goldMat, [0.28, 0.96, dir * 0.04]);
+    addMesh(inner, geoCone(0.022, 0.14, 6), goldMat, [0.36, 0.94, dir * 0.04]);
+  } else if (heroId === 'hero_joker') {
+    addMesh(inner, torsoGeo, purpleMat, [0, 0.25, 0]);
+    addMesh(inner, geoBox(0.09, 0.26, 0.04), darkGoldMat, [0, 0.27, dir * 0.17]);
+    addMesh(inner, headGeo, whiteMat, [0, 0.62, 0]);
+    // Joker grin + emerald hair crown + tilted purple hat
+    addMesh(inner, geoBox(0.14, 0.032, 0.04), royalRedMat, [0, 0.56, dir * 0.15]);
+    addMesh(inner, geoCylinder(0.22, 0.22, 0.025, 20), emeraldMat, [0, 0.76, 0], [0.1, 0, 0.1]);
+    addMesh(inner, geoCylinder(0.13, 0.15, 0.16, 16), purpleMat, [0, 0.85, 0], [0.1, 0, 0.1]);
+  }
+
+  g.add(inner);
+  return g;
+}
+
 /**
  * Builds a complete 3D piece mesh group according to piece type, side ('w'|'b'), and customization config.
  */
 export function buildChessPiece3D(type, colorSide, pieceConfig) {
   const cfg = pieceConfig || createDefaultPieceConfig();
   const { mainMat, accentMat } = buildMaterials(colorSide, cfg);
+  const effectiveStyle = resolveEffectiveStyle(cfg.style, type, colorSide);
 
   let group;
-  switch (cfg.style) {
-    case 'futuristic':
-      group = buildFuturisticPiece(type, colorSide, mainMat, accentMat);
-      break;
-    case 'minimalist':
-      group = buildMinimalistPiece(type, colorSide, mainMat, accentMat);
-      break;
-    case 'medieval':
-      group = buildMedievalPiece(type, colorSide, mainMat, accentMat);
-      break;
-    case 'staunton':
-    default:
-      group = buildStauntonPiece(type, colorSide, mainMat, accentMat);
-      break;
+  if (effectiveStyle.startsWith('hero_')) {
+    group = buildHeroPiece(effectiveStyle, type, colorSide, mainMat, accentMat);
+  } else {
+    switch (effectiveStyle) {
+      case 'futuristic':
+        group = buildFuturisticPiece(type, colorSide, mainMat, accentMat);
+        break;
+      case 'minimalist':
+        group = buildMinimalistPiece(type, colorSide, mainMat, accentMat);
+        break;
+      case 'medieval':
+        group = buildMedievalPiece(type, colorSide, mainMat, accentMat);
+        break;
+      case 'staunton':
+      default:
+        group = buildStauntonPiece(type, colorSide, mainMat, accentMat);
+        break;
+    }
   }
 
   const hScale = Number(cfg.heightScale || 1.0);
   group.scale.set(1, hScale, 1);
-  group.userData = { type, color: colorSide };
+  group.userData = { type, color: colorSide, effectiveStyle };
   return group;
 }
 

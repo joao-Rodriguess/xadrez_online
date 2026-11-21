@@ -129,6 +129,10 @@
           <div class="menu-footer">
             <div class="menu-footer-controls">
               <div class="menu-footer-item">
+                <label for="menu-piece-set-select">Peças:</label>
+                <select id="menu-piece-set-select" class="select-compact"></select>
+              </div>
+              <div class="menu-footer-item">
                 <label for="menu-board-theme-select">Tabuleiro:</label>
                 <select id="menu-board-theme-select" class="select-compact"></select>
               </div>
@@ -164,6 +168,8 @@
               <button class="cam-btn" data-cam="cinematic" title="Ângulo Cinemático">Cinema</button>
             </div>
             <div class="control-group">
+              <label for="piece-set-select" class="sr-only">Conjunto de Peças</label>
+              <select id="piece-set-select" class="select-compact" title="Tema das Peças 3D (Clássico / Marvel / DC)"></select>
               <label for="board-theme-select" class="sr-only">Tema do Tabuleiro</label>
               <select id="board-theme-select" class="select-compact" title="Tema do Tabuleiro 3D"></select>
               <label for="lighting-mode-select" class="sr-only">Iluminação</label>
@@ -391,6 +397,7 @@
           <!-- Left: Live 3D Piece Preview -->
           <div class="studio-preview-col">
             <canvas id="studio-preview-canvas" width="300" height="320"></canvas>
+            <div id="studio-hero-badge" class="studio-hero-badge">Clássico Staunton</div>
             <div class="preview-side-toggle">
               <button id="preview-white-btn" class="btn btn-xs btn-primary">Branca</button>
               <button id="preview-black-btn" class="btn btn-xs btn-ghost">Preta</button>
@@ -403,6 +410,16 @@
 
           <!-- Right: Piece Selector & PBR Controls -->
           <div class="studio-controls-col">
+            <div class="hero-collections-bar">
+              <span class="hero-bar-label">Coleções Rápidas (Super-Heróis & Clássico)</span>
+              <div class="hero-collection-btns">
+                <button id="btn-preset-marvel" class="btn btn-xs btn-ghost">Marvel (Vingadores)</button>
+                <button id="btn-preset-dc" class="btn btn-xs btn-ghost">DC (Liga da Justiça)</button>
+                <button id="btn-preset-marvel-dc" class="btn btn-xs btn-primary">Marvel vs DC</button>
+                <button id="btn-preset-classic" class="btn btn-xs btn-ghost">Clássico Staunton</button>
+              </div>
+            </div>
+
             <div class="piece-tabs" id="studio-piece-tabs">
               <button class="piece-tab active" data-piece="all">Todas</button>
               <button class="piece-tab" data-piece="k">♚ Rei</button>
@@ -542,6 +559,10 @@
         <div class="modal-body">
           <div class="settings-section">
             <h3>Ambiente e Preferências</h3>
+            <div class="form-row">
+              <label for="settings-piece-set-select">Coleção de Peças 3D</label>
+              <select id="settings-piece-set-select" class="input"></select>
+            </div>
             <div class="form-grid-2">
               <div class="form-row">
                 <label for="settings-board-theme-select">Tema do Tabuleiro 3D</label>

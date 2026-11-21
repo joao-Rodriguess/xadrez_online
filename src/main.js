@@ -7,7 +7,20 @@ import {
   PiecePreviewStudio,
   createDefaultCustomization,
   createDefaultPieceConfig,
+  createHeroSetCustomization,
+  getHeroStyleBadgeText,
 } from './pieceBuilder3D.js';
+
+const QUICK_PIECE_SETS = [
+  { id: 'staunton', label: 'Peças: Clássico Staunton' },
+  { id: 'marvel_heroes', label: 'Peças: Marvel (Vingadores)' },
+  { id: 'dc_heroes', label: 'Peças: DC (Liga da Justiça)' },
+  { id: 'marvel_vs_dc', label: 'Peças: Marvel vs DC' },
+  { id: 'futuristic', label: 'Peças: Futurista' },
+  { id: 'medieval', label: 'Peças: Medieval' },
+  { id: 'minimalist', label: 'Peças: Minimalista' },
+  { id: 'custom', label: 'Peças: Personalizado', disabled: true },
+];
 import {
   BOT_LEVELS,
   TACTICAL_PUZZLES,
@@ -239,6 +252,27 @@ class ChessRoyaleApp {
         this._toast(`Iluminação: ${cfg.label}`);
       });
     }
+
+    // Quick piece set selectors (HUD, Main Menu, Settings Modal)
+    const pieceSetSelectors = [
+      document.getElementById('piece-set-select'),
+      document.getElementById('menu-piece-set-select'),
+      document.getElementById('settings-piece-set-select'),
+    ].filter(Boolean);
+
+    pieceSetSelectors.forEach((sel) => {
+      QUICK_PIECE_SETS.forEach((s) => {
+        const opt = document.createElement('option');
+        opt.value = s.id;
+        opt.textContent = s.label;
+        if (s.disabled) opt.disabled = true;
+        sel.appendChild(opt);
+      });
+      sel.addEventListener('change', (e) => {
+        this._applyQuickPieceSet(e.target.value, true);
+      });
+    });
+    this._syncPieceSetSelectors();
 
     // Camera presets
     document.querySelectorAll('.cam-btn[data-cam]').forEach((btn) => {
@@ -508,6 +542,20 @@ class ChessRoyaleApp {
     bindSlider('studio-transmission', 'val-transmission', 'transmission');
     bindSlider('studio-height', 'val-height', 'heightScale', (v) => `${Number(v).toFixed(2)}x`);
 
+    const bindStudioQuickPreset = (btnId, setId) => {
+      const btn = document.getElementById(btnId);
+      if (!btn) return;
+      btn.addEventListener('click', () => {
+        this.customization = createHeroSetCustomization(setId);
+        this._populateStudioControls();
+        this._refreshStudioPreview();
+      });
+    };
+    bindStudioQuickPreset('btn-preset-marvel', 'marvel_heroes');
+    bindStudioQuickPreset('btn-preset-dc', 'dc_heroes');
+    bindStudioQuickPreset('btn-preset-marvel-dc', 'marvel_vs_dc');
+    bindStudioQuickPreset('btn-preset-classic', 'staunton');
+
     document.getElementById('btn-mix-styles').addEventListener('click', () => {
       const styles = Object.keys(GEOMETRY_STYLES);
       const presets = Object.keys(MATERIAL_PRESETS);
@@ -518,7 +566,7 @@ class ChessRoyaleApp {
       }
       this._populateStudioControls();
       this._refreshStudioPreview();
-      this._toast('Estilos misturados por peça! Clique em "Aplicar" para ver no tabuleiro.');
+      this._toast('Estilos misturados por peça! Clique em "Aplicar no Tabuleiro".');
     });
 
     document.getElementById('btn-reset-pieces').addEventListener('click', () => {
@@ -529,13 +577,50 @@ class ChessRoyaleApp {
 
     document.getElementById('btn-apply-studio').addEventListener('click', () => {
       this._saveCustomization();
+      this._syncPieceSetSelectors();
       this.scene3d.rebuildAllPieces(this.chess.board(), this.customization);
       if (this.gameMode === 'online') {
         this.multiplayer.syncPieceStyle(this.customization);
       }
       this._closeModal('modal-piece-studio');
-      this._toast('Personalização 3D aplicada ao tabuleiro!');
+      this._toast('Personalização 3D aplicada ao tabuleiro.');
     });
+  }
+
+  _detectPieceSetId() {
+    const styles = PIECE_TYPES.map((t) => this.customization?.pieces?.[t]?.style || 'staunton');
+    const first = styles[0];
+    if (styles.every((s) => s === first) && QUICK_PIECE_SETS.some((q) => q.id === first && !q.disabled)) {
+      return first;
+    }
+    return 'custom';
+  }
+
+  _syncPieceSetSelectors() {
+    const activeId = this._detectPieceSetId();
+    const selectors = [
+      document.getElementById('piece-set-select'),
+      document.getElementById('menu-piece-set-select'),
+      document.getElementById('settings-piece-set-select'),
+    ].filter(Boolean);
+    selectors.forEach((sel) => {
+      sel.value = activeId;
+    });
+  }
+
+  _applyQuickPieceSet(setId, applyToBoard = true) {
+    if (!setId || setId === 'custom') return;
+    this.customization = createHeroSetCustomization(setId);
+    this._saveCustomization();
+    this._syncPieceSetSelectors();
+    if (applyToBoard) {
+      this.scene3d.rebuildAllPieces(this.chess.board(), this.customization);
+      if (this.gameMode === 'online') {
+        this.multiplayer.syncPieceStyle(this.customization);
+      }
+      const label = QUICK_PIECE_SETS.find((s) => s.id === setId)?.label || setId;
+      this._toast(`${label} aplicada ao tabuleiro.`);
+    }
   }
 
   _initOnlineAndFirebaseEvents() {
@@ -1964,6 +2049,10 @@ class ChessRoyaleApp {
     const sampleType = this.studioTarget === 'all' ? 'k' : this.studioTarget;
     const cfg = this.customization.pieces[sampleType];
     this.previewStudio.updatePiece(sampleType, this.studioPreviewSide, cfg);
+    const badge = document.getElementById('studio-hero-badge');
+    if (badge) {
+      badge.textContent = getHeroStyleBadgeText(cfg.style, sampleType, this.studioPreviewSide);
+    }
   }
 
   _openOnlineLobby() {
