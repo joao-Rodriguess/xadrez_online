@@ -26,12 +26,19 @@ import {
   TACTICAL_PUZZLES,
   classifyMoveQuality,
   getBestMove,
+  analyzePositionBestMove,
   evaluateBoardScore,
   isGameCheck,
   isGameCheckmate,
   isGameDraw,
   isGameOver,
 } from './botAI.js';
+import {
+  LEARNING_TRACKS,
+  LEARNING_LESSONS,
+  CHESS_ENCYCLOPEDIA,
+  detectOpeningFromHistory,
+} from './learningBase.js';
 import { MultiplayerManager } from './firebaseMultiplayer.js';
 import { audioFX, MUSIC_TRACKS } from './audioFX.js';
 
@@ -42,6 +49,9 @@ const LIGHTING_MODE_STORAGE_KEY = 'chess3d_lighting_mode_v1';
 const MUSIC_TRACK_STORAGE_KEY = 'chess3d_music_track_v1';
 const MUSIC_VOLUME_STORAGE_KEY = 'chess3d_music_volume_v1';
 const MOVE_LIGHT_GUIDES_STORAGE_KEY = 'chess3d_move_light_guides_v1';
+const ACADEMY_PROGRESS_KEY = 'chess3d_academy_done_v1';
+const PLAYER_NAME_STORAGE_KEY = 'chess3d_player_name_v1';
+const COACH_MODE_STORAGE_KEY = 'chess3d_coach_mode_v1';
 const PIECE_UNICODE = {
   w: { p: '♙', n: '♘', b: '♗', r: '♖', q: '♕', k: '♔' },
   b: { p: '♟', n: '♞', b: '♝', r: '♜', q: '♛', k: '♚' },
@@ -52,12 +62,22 @@ class ChessRoyaleApp {
     this.chess = new Chess();
     this.multiplayer = new MultiplayerManager();
 
-    this.gameMode = 'bot'; // 'bot' | 'local' | 'bot_vs_bot' | 'online' | 'puzzle'
+    this.gameMode = 'bot'; // 'bot' | 'local' | 'bot_vs_bot' | 'online' | 'puzzle' | 'academy'
     this.variant = 'standard'; // 'standard' | 'koth' | 'three_check'
     this.checksCount = { w: 0, b: 0 };
     this.showThreatMap = false;
     this.puzzleIndex = 0;
     this.currentPuzzle = null;
+    this.academyCompleted = this._loadAcademyProgress();
+    this.academyTrackId = 'fundamentals';
+    this.currentLesson = null;
+    this.academyStepIndex = 0;
+    this.coachMode = this._loadSavedCoachMode();
+    this.lastCoachMistake = null;
+    this.humanMoveQualities = [];
+    this.socialData = { friends: [], friendRequests: [], incomingChallenges: [], acceptedChallenges: [] };
+    this.activeIncomingChallenge = null;
+    this._handledAcceptedChallenges = new Set();
     this.evalHistory = [0.1];
     this.lastClockAlertSec = { w: -1, b: -1 };
     this.botLevel = 3;
@@ -108,8 +128,38 @@ class ChessRoyaleApp {
     this._showMainMenu();
     this.multiplayer.checkCloudStatus().then(() => {
       this._updateConnectionBadge();
+      this.multiplayer.startSocialSync(
+        () => this._getSocialPresenceState(),
+        (data) => this._onSocialUpdate(data)
+      );
     });
     this._checkUrlInvite();
+  }
+
+  _loadAcademyProgress() {
+    try {
+      const raw = JSON.parse(localStorage.getItem(ACADEMY_PROGRESS_KEY) || '[]');
+      return new Set(Array.isArray(raw) ? raw : []);
+    } catch {
+      return new Set();
+    }
+  }
+
+  _saveAcademyProgress() {
+    try {
+      localStorage.setItem(ACADEMY_PROGRESS_KEY, JSON.stringify([...this.academyCompleted]));
+    } catch {
+      // ignore storage errors
+    }
+  }
+
+  _loadSavedCoachMode() {
+    try {
+      const saved = localStorage.getItem(COACH_MODE_STORAGE_KEY);
+      return saved === null ? true : saved === 'true';
+    } catch {
+      return true;
+    }
   }
 
   _loadSavedMusicTrack() {
@@ -477,16 +527,22 @@ class ChessRoyaleApp {
     document.getElementById('btn-open-menu').addEventListener('click', () => this._showMainMenu());
     document.getElementById('btn-resume-game').addEventListener('click', () => this._hideMainMenu());
     document.getElementById('btn-new-game').addEventListener('click', () => this._openNewGameModal());
+    document.getElementById('btn-open-academy').addEventListener('click', () => this._openAcademyModal());
+    document.getElementById('btn-open-friends').addEventListener('click', () => this._openFriendsModal());
     document.getElementById('btn-piece-studio').addEventListener('click', () => this._openPieceStudio());
     document.getElementById('btn-online-lobby').addEventListener('click', () => this._openOnlineLobby());
     document.getElementById('btn-firebase-config').addEventListener('click', () => this._openFirebaseModal());
 
-    // Main Menu 8 Action Cards
+    // Main Menu Action Cards
     document.querySelectorAll('[data-menu-action]').forEach((card) => {
       card.addEventListener('click', () => {
         const act = card.dataset.menuAction;
         if (act === 'bot' || act === 'local' || act === 'bot_vs_bot') {
           this._openNewGameModal(act);
+        } else if (act === 'academy') {
+          this._openAcademyModal();
+        } else if (act === 'friends') {
+          this._openFriendsModal();
         } else if (act === 'quick_online') {
           this._startQuickMatch();
         } else if (act === 'online') {
@@ -499,6 +555,30 @@ class ChessRoyaleApp {
           this._openFirebaseModal();
         }
       });
+    });
+
+    // Academy HUD Controls
+    document.getElementById('btn-academy-hint').addEventListener('click', () => this._showAcademyHint());
+    document.getElementById('btn-academy-demo').addEventListener('click', () => this._demoAcademyStep());
+    document.getElementById('btn-academy-retry').addEventListener('click', () => {
+      if (this.currentLesson) this._startAcademyLesson(this.currentLesson.id);
+    });
+    document.getElementById('btn-academy-next').addEventListener('click', () => this._startNextAcademyLesson());
+    document.getElementById('btn-academy-catalog').addEventListener('click', () => {
+      this._openAcademyModal(this.currentLesson?.trackId);
+    });
+
+    // Evolution Coach Live Alert Controls
+    document.getElementById('btn-coach-show-best').addEventListener('click', () => {
+      if (!this.lastCoachMistake) return;
+      const { bestFrom, bestTo, bestSan } = this.lastCoachMistake;
+      this.hintMove = { from: bestFrom, to: bestTo };
+      this._renderHighlights();
+      this._toast(`Melhor lance era ${bestSan} (${bestFrom.toUpperCase()}→${bestTo.toUpperCase()}).`);
+    });
+    document.getElementById('btn-coach-retry-move').addEventListener('click', () => {
+      if (!this.lastCoachMistake || this.gameMode === 'online' || this.isBotThinking) return;
+      this._restartFromHistoryPly(this.lastCoachMistake.plyBefore);
     });
 
     // Threat Map 3D toggle, Copy PGN, Puzzle Controls, Quick Match & Eval Chart Navigation
@@ -590,6 +670,19 @@ class ChessRoyaleApp {
     };
     botSelect.addEventListener('change', updateBotDesc);
     updateBotDesc();
+
+    const coachChk = document.getElementById('chk-coach-mode');
+    if (coachChk) {
+      coachChk.checked = this.coachMode;
+      coachChk.addEventListener('change', (e) => {
+        this.coachMode = e.target.checked;
+        try {
+          localStorage.setItem(COACH_MODE_STORAGE_KEY, String(this.coachMode));
+        } catch {
+          // ignore storage errors
+        }
+      });
+    }
 
     document.getElementById('btn-start-match').addEventListener('click', () => {
       const lvl = Number(botSelect.value);
@@ -789,11 +882,24 @@ class ChessRoyaleApp {
   }
 
   _initOnlineAndFirebaseEvents() {
+    try {
+      const savedName = localStorage.getItem(PLAYER_NAME_STORAGE_KEY);
+      if (savedName) {
+        const onlineInp = document.getElementById('online-player-name');
+        const friendInp = document.getElementById('friends-player-name-input');
+        if (onlineInp && !onlineInp.value) onlineInp.value = savedName;
+        if (friendInp && !friendInp.value) friendInp.value = savedName;
+      }
+    } catch {
+      // ignore storage errors
+    }
+
     document.getElementById('btn-create-room').addEventListener('click', async () => {
       try {
         const playerName = this._getLocalPlayerName();
         const colorPref = document.getElementById('online-color-select').value;
         const [sec, inc] = document.getElementById('online-time-select').value.split('|').map(Number);
+        const isPrivate = document.getElementById('online-private-chk')?.checked !== false;
 
         const res = await this.multiplayer.createRoom({
           playerName,
@@ -801,10 +907,15 @@ class ChessRoyaleApp {
           incrementSeconds: inc,
           preferredColor: colorPref,
           pieceCustomization: this.customization,
+          isPrivate,
         });
         this._enterOnlineRoom(res.roomId, res.myColor, res.room);
         this._closeModal('modal-online-lobby');
-        this._toast(`Sala ${res.roomId} criada! Envie o link de convite.`);
+        this._toast(
+          isPrivate
+            ? `Sala privada ${res.roomId} criada (Senha: ${res.accessKey})! Copie o link para convidar.`
+            : `Sala pública ${res.roomId} criada! Envie o link de convite.`
+        );
       } catch (err) {
         this._toast(`Erro: ${err.message}`);
       }
@@ -812,10 +923,92 @@ class ChessRoyaleApp {
 
     document.getElementById('btn-join-room').addEventListener('click', async () => {
       const code = document.getElementById('join-room-code').value;
-      await this._joinOnlineRoomByCode(code);
+      const key = document.getElementById('join-room-key')?.value?.trim() || '';
+      await this._joinOnlineRoomByCode(code, key);
     });
 
     document.getElementById('btn-refresh-rooms').addEventListener('click', () => this._refreshPublicRooms());
+
+    // Friends & Direct Challenge events
+    document.getElementById('btn-save-profile-name')?.addEventListener('click', async () => {
+      const inp = document.getElementById('friends-player-name-input');
+      const name = inp?.value.trim() || 'Jogador';
+      try {
+        localStorage.setItem(PLAYER_NAME_STORAGE_KEY, name);
+      } catch {
+        // ignore storage errors
+      }
+      const onlineInp = document.getElementById('online-player-name');
+      if (onlineInp) onlineInp.value = name;
+      await this.multiplayer.refreshSocial?.();
+      this._toast(`Nome atualizado para "${name}".`);
+    });
+
+    document.getElementById('btn-copy-friend-tag')?.addEventListener('click', () => {
+      const tag = this.multiplayer.friendTag;
+      navigator.clipboard?.writeText(tag).then(
+        () => this._toast(`Sua tag ${tag} foi copiada!`),
+        () => this._toast(`Sua tag: ${tag}`)
+      );
+    });
+
+    document.getElementById('btn-add-friend')?.addEventListener('click', async () => {
+      const inp = document.getElementById('friend-tag-input');
+      const tag = inp?.value.trim();
+      if (!tag) return;
+      try {
+        await this.multiplayer.sendFriendRequest(tag, this._getLocalPlayerName());
+        if (inp) inp.value = '';
+        this._toast(`Solicitação enviada para ${tag}!`);
+        await this.multiplayer.refreshSocial?.();
+      } catch (err) {
+        this._toast(`Erro ao adicionar amigo: ${err.message}`);
+      }
+    });
+
+    document.getElementById('btn-refresh-friends')?.addEventListener('click', async () => {
+      await this.multiplayer.refreshSocial?.();
+      this._renderFriendsModal();
+      this._toast('Lista de amigos atualizada.');
+    });
+
+    document.getElementById('btn-accept-challenge')?.addEventListener('click', async () => {
+      const ch = this.activeIncomingChallenge;
+      if (!ch) return;
+      const cid = ch.challengeId || ch.id;
+      try {
+        const res = await this.multiplayer.respondGameChallenge(cid, {
+          playerName: this._getLocalPlayerName(),
+          accept: true,
+          pieceCustomization: this.customization,
+        });
+        document.getElementById('challenge-banner').classList.add('hidden');
+        this.activeIncomingChallenge = null;
+        if (res?.roomId && res?.room) {
+          this._enterOnlineRoom(res.roomId, res.myColor || 'b', res.room);
+          this._closeModal('modal-friends');
+          this._closeModal('modal-online-lobby');
+          this._toast(`Conectado na sala privada ${res.roomId}!`);
+        } else if (res?.roomId) {
+          await this._joinOnlineRoomByCode(res.roomId, res.accessKey || '');
+        }
+      } catch (err) {
+        this._toast(`Erro ao aceitar desafio: ${err.message}`);
+      }
+    });
+
+    document.getElementById('btn-decline-challenge')?.addEventListener('click', async () => {
+      const ch = this.activeIncomingChallenge;
+      if (!ch) return;
+      const cid = ch.challengeId || ch.id;
+      try {
+        await this.multiplayer.respondGameChallenge(cid, { accept: false });
+      } catch {
+        // ignore decline error
+      }
+      document.getElementById('challenge-banner').classList.add('hidden');
+      this.activeIncomingChallenge = null;
+    });
 
     document.getElementById('btn-save-firebase').addEventListener('click', async () => {
       const statusEl = document.getElementById('firebase-status-msg');
@@ -824,6 +1017,7 @@ class ChessRoyaleApp {
         const res = await this.multiplayer.enableCloudMode();
         statusEl.textContent = `Nuvem conectada (Latência: ${res.pingMs ?? '-'} ms).`;
         this._updateConnectionBadge();
+        await this.multiplayer.refreshSocial?.();
         this._toast('Conexão na nuvem ativada.');
       } catch (err) {
         statusEl.textContent = `Aviso: ${err.message}`;
@@ -834,6 +1028,7 @@ class ChessRoyaleApp {
     document.getElementById('btn-disconnect-firebase').addEventListener('click', async () => {
       await this.multiplayer.disconnectToDemo();
       this._updateConnectionBadge();
+      await this.multiplayer.refreshSocial?.();
       this._closeModal('modal-firebase');
       this._toast('Modo Demo Multi-Aba ativado.');
     });
@@ -841,25 +1036,39 @@ class ChessRoyaleApp {
 
   _getLocalPlayerName() {
     const inp = document.getElementById('online-player-name');
-    return inp?.value.trim() || 'Jogador';
+    const friendInp = document.getElementById('friends-player-name-input');
+    const typed = inp?.value.trim() || friendInp?.value.trim();
+    if (typed) return typed;
+    try {
+      return localStorage.getItem(PLAYER_NAME_STORAGE_KEY) || 'Jogador';
+    } catch {
+      return 'Jogador';
+    }
   }
 
   async _checkUrlInvite() {
     const params = new URLSearchParams(window.location.search);
     const room = params.get('room');
+    const key = params.get('key') || '';
     if (room) {
-      await this._joinOnlineRoomByCode(room);
+      const codeInp = document.getElementById('join-room-code');
+      const keyInp = document.getElementById('join-room-key');
+      if (codeInp) codeInp.value = room;
+      if (keyInp && key) keyInp.value = key;
+      await this._joinOnlineRoomByCode(room, key);
     }
   }
 
-  async _joinOnlineRoomByCode(code) {
+  async _joinOnlineRoomByCode(code, accessKey = '') {
     try {
       const res = await this.multiplayer.joinRoom(code, {
         playerName: this._getLocalPlayerName(),
         pieceCustomization: this.customization,
+        accessKey,
       });
       this._enterOnlineRoom(res.roomId, res.myColor, res.room);
       this._closeModal('modal-online-lobby');
+      this._closeModal('modal-friends');
       this._toast(`Conectado na sala ${res.roomId}!`);
     } catch (err) {
       this._toast(`Não foi possível entrar: ${err.message}`);
@@ -871,6 +1080,9 @@ class ChessRoyaleApp {
     this.variant = 'standard';
     this.checksCount = { w: 0, b: 0 };
     this.currentPuzzle = null;
+    this.currentLesson = null;
+    this.lastCoachMistake = null;
+    this.humanMoveQualities = [];
     this.humanColor = myColor === 'b' ? 'b' : 'w';
     this.selectedSquare = null;
     this.legalMoves = [];
@@ -885,12 +1097,39 @@ class ChessRoyaleApp {
 
     const url = new URL(window.location.href);
     url.searchParams.set('room', roomId);
+    if (this.multiplayer.currentAccessKey) {
+      url.searchParams.set('key', this.multiplayer.currentAccessKey);
+    } else {
+      url.searchParams.delete('key');
+    }
     window.history.replaceState({}, '', url.toString());
 
     document.getElementById('puzzle-banner').classList.add('hidden');
+    document.getElementById('academy-panel').classList.add('hidden');
+    document.getElementById('coach-alert-banner').classList.add('hidden');
     document.getElementById('move-quality-badge').classList.add('hidden');
     document.getElementById('online-panel').classList.remove('hidden');
     document.getElementById('room-code-display').textContent = roomId;
+
+    const privacyBadge = document.getElementById('room-privacy-badge');
+    const keyWrap = document.getElementById('room-key-wrap');
+    const keyDisplay = document.getElementById('room-key-display');
+    const isPriv = Boolean(initialRoom?.isPrivate || this.multiplayer.currentAccessKey);
+    if (privacyBadge) {
+      privacyBadge.classList.remove('hidden');
+      privacyBadge.className = `badge ${isPriv ? 'badge-private' : 'badge-public'}`;
+      privacyBadge.textContent = isPriv ? 'Sala Privada 🔒' : 'Sala Pública';
+    }
+    if (keyWrap && keyDisplay) {
+      if (this.multiplayer.currentAccessKey) {
+        keyWrap.classList.remove('hidden');
+        keyDisplay.textContent = this.multiplayer.currentAccessKey;
+      } else {
+        keyWrap.classList.add('hidden');
+        keyDisplay.textContent = '';
+      }
+    }
+
     document.getElementById('btn-draw').classList.remove('hidden');
     document.getElementById('btn-undo').classList.add('hidden');
 
@@ -1018,11 +1257,15 @@ class ChessRoyaleApp {
 
   _copyInviteLink() {
     if (!this.multiplayer.currentRoomId) return;
-    const url = new URL(window.location.href);
-    url.searchParams.set('room', this.multiplayer.currentRoomId);
-    navigator.clipboard?.writeText(url.toString()).then(
-      () => this._toast('Link de convite copiado! Compartilhe com seu amigo ou abra em outra aba.'),
-      () => this._toast(`Código da sala: ${this.multiplayer.currentRoomId}`)
+    const link = this.multiplayer.getInviteUrl() || window.location.href;
+    navigator.clipboard?.writeText(link).then(
+      () =>
+        this._toast(
+          this.multiplayer.currentAccessKey
+            ? 'Link fechado com senha única copiado! Somente quem tem este link entra na sala.'
+            : 'Link de convite copiado!'
+        ),
+      () => this._toast(`Código: ${this.multiplayer.currentRoomId}`)
     );
   }
 
@@ -1030,10 +1273,13 @@ class ChessRoyaleApp {
     this.multiplayer.leaveRoom();
     const url = new URL(window.location.href);
     url.searchParams.delete('room');
+    url.searchParams.delete('key');
     window.history.replaceState({}, '', url.toString());
 
     document.getElementById('online-panel').classList.add('hidden');
     document.getElementById('puzzle-banner').classList.add('hidden');
+    document.getElementById('academy-panel').classList.add('hidden');
+    document.getElementById('coach-alert-banner').classList.add('hidden');
     document.getElementById('btn-draw').classList.add('hidden');
     document.getElementById('btn-undo').classList.remove('hidden');
 
@@ -1041,6 +1287,9 @@ class ChessRoyaleApp {
     this.variant = variant || 'standard';
     this.checksCount = { w: 0, b: 0 };
     this.currentPuzzle = null;
+    this.currentLesson = null;
+    this.lastCoachMistake = null;
+    this.humanMoveQualities = [];
     this.botLevel = botLevel || 3;
     this.humanColor = humanColor || 'w';
     this.timeControl = timeControl || { initialSeconds: 600, incrementSeconds: 0 };
@@ -1165,10 +1414,14 @@ class ChessRoyaleApp {
   }
 
   async _commitMove(moveObj) {
+    const fenBeforeMove = this.chess.fen();
     const prevEvalPawns = this.evalHistory[this.evalHistory.length - 1] ?? 0;
     const moverColor = this.chess.turn();
     const result = this.chess.move(moveObj);
     if (!result) return;
+
+    this.lastCoachMistake = null;
+    document.getElementById('coach-alert-banner').classList.add('hidden');
 
     // Apply time increment
     if (this.timeControl.initialSeconds > 0 && this.timeControl.incrementSeconds > 0) {
@@ -1186,15 +1439,16 @@ class ChessRoyaleApp {
     const nextEvalPawns = nextEvalScore.mateIn === 0 ? (nextEvalScore.winner === 'w' ? 15 : -15) : nextEvalScore.pawns;
     this.evalHistory.push(nextEvalPawns);
 
-    // Tactical move quality badge for human moves (and bot personality reactions)
+    // Tactical move quality badge for human moves (and bot personality reactions + Coach Mode)
     const isHumanMove =
       this.gameMode === 'local' ||
       this.gameMode === 'puzzle' ||
+      this.gameMode === 'academy' ||
       (this.gameMode === 'bot' && moverColor === this.humanColor) ||
       (this.gameMode === 'online' && moverColor === this.multiplayer.myColor);
 
     const qualityEl = document.getElementById('move-quality-badge');
-    if (isHumanMove && this.gameMode !== 'puzzle') {
+    if (isHumanMove && this.gameMode !== 'puzzle' && this.gameMode !== 'academy') {
       const q = classifyMoveQuality(
         prevEvalPawns,
         nextEvalPawns,
@@ -1202,6 +1456,7 @@ class ChessRoyaleApp {
         isGameCheckmate(this.chess),
         Boolean(result.captured)
       );
+      this.humanMoveQualities.push({ symbol: q.symbol, label: q.label });
       qualityEl.textContent = `${q.symbol} ${q.label}`;
       qualityEl.className = `quality-badge ${q.cssClass}`;
       if (this.gameMode === 'bot' && (q.symbol === '!!' || q.symbol === '??')) {
@@ -1209,6 +1464,32 @@ class ChessRoyaleApp {
         if (q.symbol === '!!' && bot?.chatLines?.blunder) {
           this._toast(`${bot.shortName}: "${bot.chatLines.blunder}"`);
         }
+      }
+      if (this.coachMode && (q.symbol === '?!' || q.symbol === '??') && !isGameOver(this.chess)) {
+        const plyBefore = this.moveSnapshots.length - 2;
+        const modeAtMove = this.gameMode;
+        const sanPlayed = result.san;
+        setTimeout(() => {
+          if (this.gameEnded || this.gameMode !== modeAtMove) return;
+          const best = analyzePositionBestMove(fenBeforeMove, 3);
+          if (best && best.san !== sanPlayed) {
+            this.lastCoachMistake = {
+              fenBefore: fenBeforeMove,
+              plyBefore,
+              moveSan: sanPlayed,
+              bestSan: best.san,
+              bestFrom: best.from,
+              bestTo: best.to,
+            };
+            const alertText = document.getElementById('coach-alert-text');
+            if (alertText) {
+              alertText.textContent = `${q.symbol === '??' ? 'Erro Grave (??)' : 'Imprecisão (?!)'}: ${sanPlayed} perdeu vantagem. Melhor lance era ${best.san} (${best.from.toUpperCase()}→${best.to.toUpperCase()}).`;
+            }
+            const retryBtn = document.getElementById('btn-coach-retry-move');
+            if (retryBtn) retryBtn.classList.toggle('hidden', this.gameMode === 'online');
+            document.getElementById('coach-alert-banner').classList.remove('hidden');
+          }
+        }, 25);
       }
     } else if (this.gameMode === 'bot' && moverColor !== this.humanColor) {
       const bot = BOT_LEVELS[this.botLevel];
@@ -1249,6 +1530,12 @@ class ChessRoyaleApp {
       result.piece === 'k' &&
       ['d4', 'e4', 'd5', 'e5'].includes(result.to);
     const isThreeCheckWin = this.variant === 'three_check' && this.checksCount[moverColor] >= 3;
+
+    // Academy Mode interactive lesson validation
+    if (this.gameMode === 'academy' && this.currentLesson) {
+      this._handleAcademyMove(result, nextEvalScore);
+      return;
+    }
 
     // Puzzle mode evaluation
     if (this.gameMode === 'puzzle' && this.currentPuzzle) {
@@ -1395,7 +1682,7 @@ class ChessRoyaleApp {
   }
 
   _undoMove() {
-    if (this.gameMode === 'online' || this.isBotThinking) return;
+    if (this.gameMode === 'online' || this.gameMode === 'academy' || this.isBotThinking) return;
     if (this.chess.history().length === 0) return;
 
     this.chess.undo();
@@ -1404,6 +1691,11 @@ class ChessRoyaleApp {
     }
     this.moveSnapshots = this.moveSnapshots.slice(0, this.chess.history().length + 1);
     this._saveSnapshots();
+    if (this.humanMoveQualities.length > 0) {
+      this.humanMoveQualities.pop();
+    }
+    this.lastCoachMistake = null;
+    document.getElementById('coach-alert-banner').classList.add('hidden');
     const latestSnap = this.moveSnapshots[this.moveSnapshots.length - 1];
     this.historyPreviewPly = null;
     this.gameEnded = false;
@@ -1651,9 +1943,17 @@ class ChessRoyaleApp {
 
   _startPuzzleMode(idx = 0) {
     this.multiplayer.leaveRoom();
+    const url = new URL(window.location.href);
+    url.searchParams.delete('room');
+    url.searchParams.delete('key');
+    window.history.replaceState({}, '', url.toString());
+
     this.puzzleIndex = idx % TACTICAL_PUZZLES.length;
     const puz = TACTICAL_PUZZLES[this.puzzleIndex];
     this.currentPuzzle = puz;
+    this.currentLesson = null;
+    this.lastCoachMistake = null;
+    this.humanMoveQualities = [];
     this.gameMode = 'puzzle';
     this.variant = 'standard';
     this.humanColor = puz.playerColor;
@@ -1674,6 +1974,8 @@ class ChessRoyaleApp {
     this.moveSnapshots[0].fen = puz.fen;
 
     document.getElementById('online-panel').classList.add('hidden');
+    document.getElementById('academy-panel').classList.add('hidden');
+    document.getElementById('coach-alert-banner').classList.add('hidden');
     document.getElementById('btn-draw').classList.add('hidden');
     document.getElementById('btn-undo').classList.add('hidden');
     document.getElementById('move-quality-badge').classList.add('hidden');
@@ -1730,6 +2032,9 @@ class ChessRoyaleApp {
     } else if (this.gameMode === 'puzzle' && this.currentPuzzle) {
       wNameEl.textContent = this.humanColor === 'w' ? 'Você (Desafio Tático)' : 'Posição do Desafio';
       bNameEl.textContent = this.humanColor === 'b' ? 'Você (Desafio Tático)' : 'Posição do Desafio';
+    } else if (this.gameMode === 'academy' && this.currentLesson) {
+      wNameEl.textContent = this.humanColor === 'w' ? 'Você (Aluno)' : 'Academia de Xadrez';
+      bNameEl.textContent = this.humanColor === 'b' ? 'Você (Aluno)' : 'Academia de Xadrez';
     } else if (this.gameMode === 'online' && this._onlineRoomSnapshot) {
       wNameEl.textContent = this._onlineRoomSnapshot.white?.name || 'Aguardando Brancas...';
       bNameEl.textContent = this._onlineRoomSnapshot.black?.name || 'Aguardando Pretas...';
@@ -1800,6 +2105,17 @@ class ChessRoyaleApp {
     const listEl = document.getElementById('move-history-list');
     listEl.innerHTML = '';
     document.getElementById('move-count-badge').textContent = `${moves.length} lances`;
+
+    const openingEl = document.getElementById('opening-name-banner');
+    if (openingEl) {
+      if (this.gameMode === 'academy' && this.currentLesson) {
+        openingEl.textContent = `Estudo: ${this.currentLesson.title}`;
+      } else if (this.gameMode === 'puzzle' && this.currentPuzzle) {
+        openingEl.textContent = `Desafio: ${this.currentPuzzle.theme}`;
+      } else {
+        openingEl.textContent = detectOpeningFromHistory(moves);
+      }
+    }
 
     const restartBar = document.getElementById('history-restart-bar');
     if (this.historyPreviewPly !== null && this.moveSnapshots[this.historyPreviewPly]) {
@@ -2028,6 +2344,8 @@ class ChessRoyaleApp {
     this.selectedSquare = null;
     this.legalMoves = [];
     this.hintMove = null;
+    this.lastCoachMistake = null;
+    document.getElementById('coach-alert-banner').classList.add('hidden');
     this.lastMove = snap.lastMove || null;
     if (snap.clocks) {
       this.clocks = { ...snap.clocks };
@@ -2122,6 +2440,8 @@ class ChessRoyaleApp {
         bot: `Vs Bot (${BOT_LEVELS[this.botLevel]?.name || 'Clube'})`,
         local: 'Local 2 Jogadores',
         bot_vs_bot: 'Bot vs Bot',
+        academy: `Academia • ${this.currentLesson?.title || 'Estudo'}`,
+        puzzle: 'Desafio Tático',
         online: `Online • Sala ${this.multiplayer.currentRoomId}`,
       };
       summaryEl.textContent = `${modeNames[this.gameMode] || 'Partida'} • ${moveCount} lances`;
@@ -2136,7 +2456,11 @@ class ChessRoyaleApp {
     this.lastClockTick = Date.now();
     document.getElementById('main-menu-screen').classList.add('hidden');
     this.scene3d.setMenuOrbit(false);
-    this.scene3d.setCameraView(this.gameMode === 'bot' || this.gameMode === 'online' ? this.humanColor : 'w');
+    this.scene3d.setCameraView(
+      this.gameMode === 'bot' || this.gameMode === 'online' || this.gameMode === 'academy' || this.gameMode === 'puzzle'
+        ? this.humanColor
+        : 'w'
+    );
   }
 
   _selectNewGameMode(mode) {
@@ -2157,6 +2481,22 @@ class ChessRoyaleApp {
   _showGameOver(title, reason) {
     document.getElementById('gameover-title').textContent = title;
     document.getElementById('gameover-reason').textContent = reason;
+
+    const accEl = document.getElementById('gameover-accuracy');
+    if (accEl) {
+      if (this.humanMoveQualities.length >= 2 && this.gameMode !== 'puzzle' && this.gameMode !== 'academy') {
+        const scoreMap = { '!!': 100, '!': 98, '✓': 92, '?!': 65, '??': 22 };
+        const total = this.humanMoveQualities.reduce((sum, item) => sum + (scoreMap[item.symbol] ?? 85), 0);
+        const pct = Math.round(total / this.humanMoveQualities.length);
+        const blunders = this.humanMoveQualities.filter((i) => i.symbol === '??').length;
+        const inaccuracies = this.humanMoveQualities.filter((i) => i.symbol === '?!').length;
+        accEl.textContent = `Precisão Estimada: ${pct}% (${this.humanMoveQualities.length} lances • ${blunders} erros graves • ${inaccuracies} imprecisões)`;
+        accEl.classList.remove('hidden');
+      } else {
+        accEl.classList.add('hidden');
+      }
+    }
+
     document.getElementById('gameover-card').classList.remove('hidden');
   }
 
@@ -2274,6 +2614,440 @@ class ChessRoyaleApp {
       statusEl.textContent = 'Status: Modo Demo Multi-Aba Local ativo.';
     }
     this._updateConnectionBadge();
+  }
+
+  // ---------- Chess Learning Academy ----------
+  _openAcademyModal(trackId = null) {
+    if (trackId) this.academyTrackId = trackId;
+    this._renderAcademyCatalog();
+    this._openModal('modal-academy');
+  }
+
+  _renderAcademyCatalog() {
+    const progressEl = document.getElementById('academy-overall-progress');
+    if (progressEl) {
+      progressEl.textContent = `${this.academyCompleted.size}/${LEARNING_LESSONS.length} lições concluídas`;
+    }
+
+    const tabsEl = document.getElementById('academy-track-tabs');
+    const lessonsEl = document.getElementById('academy-lessons-list');
+    const encycEl = document.getElementById('academy-encyclopedia-view');
+    if (!tabsEl || !lessonsEl || !encycEl) return;
+
+    tabsEl.innerHTML = '';
+    const tracksWithEncyc = [
+      ...LEARNING_TRACKS,
+      { id: 'encyclopedia', title: 'Enciclopédia & Guias', icon: '§', description: 'Teoria essencial' },
+    ];
+
+    tracksWithEncyc.forEach((tr) => {
+      const btn = document.createElement('button');
+      btn.className = `academy-tab-btn ${this.academyTrackId === tr.id ? 'active' : ''}`;
+      if (tr.id === 'encyclopedia') {
+        btn.textContent = `${tr.icon} ${tr.title}`;
+      } else {
+        const trackLessons = LEARNING_LESSONS.filter((l) => l.trackId === tr.id);
+        const doneCount = trackLessons.filter((l) => this.academyCompleted.has(l.id)).length;
+        btn.textContent = `${tr.icon} ${tr.title} (${doneCount}/${trackLessons.length})`;
+      }
+      btn.addEventListener('click', () => {
+        this.academyTrackId = tr.id;
+        this._renderAcademyCatalog();
+      });
+      tabsEl.appendChild(btn);
+    });
+
+    if (this.academyTrackId === 'encyclopedia') {
+      lessonsEl.classList.add('hidden');
+      encycEl.classList.remove('hidden');
+      encycEl.innerHTML = '';
+      CHESS_ENCYCLOPEDIA.forEach((entry) => {
+        const card = document.createElement('div');
+        card.className = 'encyc-card';
+        const itemsHtml = entry.bullets.map((b) => `<li>${this._escapeHtml(b)}</li>`).join('');
+        card.innerHTML = `
+          <h4>${this._escapeHtml(entry.title)}</h4>
+          <p>${this._escapeHtml(entry.summary)}</p>
+          <ul>${itemsHtml}</ul>
+        `;
+        encycEl.appendChild(card);
+      });
+      return;
+    }
+
+    encycEl.classList.add('hidden');
+    lessonsEl.classList.remove('hidden');
+    lessonsEl.innerHTML = '';
+
+    const filtered = LEARNING_LESSONS.filter((l) => l.trackId === this.academyTrackId);
+    filtered.forEach((lesson) => {
+      const isDone = this.academyCompleted.has(lesson.id);
+      const card = document.createElement('button');
+      card.className = `academy-lesson-card ${isDone ? 'completed' : ''}`;
+      card.innerHTML = `
+        <div class="academy-lesson-top">
+          <strong>${this._escapeHtml(lesson.title)}</strong>
+          <span class="badge ${isDone ? 'badge-cloud' : 'badge-demo'}">${isDone ? '✓ Feita' : lesson.difficulty}</span>
+        </div>
+        <div class="academy-lesson-meta">
+          <span>Jogar com: ${lesson.playerColor === 'b' ? 'Pretas ♚' : 'Brancas ♔'}</span>
+          <span>${lesson.steps.length} ${lesson.steps.length === 1 ? 'passo' : 'passos'}</span>
+        </div>
+        <p class="academy-lesson-concept">${this._escapeHtml(lesson.keyConcept)}</p>
+      `;
+      card.addEventListener('click', () => {
+        this._closeModal('modal-academy');
+        this._startAcademyLesson(lesson.id);
+      });
+      lessonsEl.appendChild(card);
+    });
+  }
+
+  _startAcademyLesson(lessonId) {
+    const lesson = LEARNING_LESSONS.find((l) => l.id === lessonId) || LEARNING_LESSONS[0];
+    if (!lesson) return;
+
+    this.multiplayer.leaveRoom();
+    const url = new URL(window.location.href);
+    url.searchParams.delete('room');
+    url.searchParams.delete('key');
+    window.history.replaceState({}, '', url.toString());
+
+    this.gameMode = 'academy';
+    this.variant = 'standard';
+    this.checksCount = { w: 0, b: 0 };
+    this.currentPuzzle = null;
+    this.currentLesson = lesson;
+    this.academyTrackId = lesson.trackId;
+    this.academyStepIndex = 0;
+    this.lastCoachMistake = null;
+    this.humanMoveQualities = [];
+    this.humanColor = lesson.playerColor || 'w';
+    this.timeControl = { initialSeconds: 0, incrementSeconds: 0 };
+    this.hasActiveMatch = true;
+    this.gameEnded = false;
+    this.isBotThinking = false;
+    this.selectedSquare = null;
+    this.legalMoves = [];
+    this.lastMove = null;
+    this.hintMove = null;
+    this.historyPreviewPly = null;
+    this._onlineMovesList = null;
+    this._onlineRoomSnapshot = null;
+
+    this.chess.load(lesson.fen);
+    this.evalHistory = [evaluateBoardScore(this.chess.fen()).pawns || 0];
+    this._resetSnapshots();
+    this.moveSnapshots[0].fen = lesson.fen;
+
+    document.getElementById('online-panel').classList.add('hidden');
+    document.getElementById('puzzle-banner').classList.add('hidden');
+    document.getElementById('coach-alert-banner').classList.add('hidden');
+    document.getElementById('btn-draw').classList.add('hidden');
+    document.getElementById('btn-undo').classList.add('hidden');
+    document.getElementById('move-quality-badge').classList.add('hidden');
+
+    document.getElementById('academy-panel').classList.remove('hidden');
+    document.getElementById('academy-title').textContent = lesson.title;
+    document.getElementById('academy-progress-badge').textContent = `Passo 1/${lesson.steps.length}`;
+    document.getElementById('academy-step-text').textContent = lesson.intro;
+
+    this._hideGameOver();
+    this._hideMainMenu();
+    this.scene3d.rebuildAllPieces(this.chess.board(), this.customization);
+    this.scene3d.setCameraView(this.humanColor);
+    this._updateConnectionBadge();
+    this._renderAll();
+    this._toast(`${lesson.title} — ${lesson.difficulty}`);
+  }
+
+  _handleAcademyMove(result, nextEvalScore) {
+    const lesson = this.currentLesson;
+    const step = lesson?.steps[this.academyStepIndex];
+    if (!lesson || !step) return;
+
+    const stripCheck = (s) => String(s || '').replace(/[+#]$/, '');
+    const expectedList = step.expected || [];
+    const matched =
+      expectedList.includes(result.san) ||
+      expectedList.some((exp) => stripCheck(exp) === stripCheck(result.san)) ||
+      (expectedList.some((exp) => exp.endsWith('#')) && isGameCheckmate(this.chess));
+
+    const badgeEl = document.getElementById('academy-progress-badge');
+    const textEl = document.getElementById('academy-step-text');
+
+    if (!matched) {
+      audioFX.playCheck();
+      if (textEl) textEl.textContent = `Quase! "${result.san}" não segue o plano desta lição. Dica: ${step.hint}`;
+      this._renderAll(nextEvalScore);
+      setTimeout(() => {
+        if (this.gameMode === 'academy' && this.currentLesson?.id === lesson.id) {
+          this.chess.undo();
+          this.moveSnapshots.pop();
+          this.evalHistory.pop();
+          this.lastMove = this.moveSnapshots[this.moveSnapshots.length - 1]?.lastMove || null;
+          this.scene3d.rebuildAllPieces(this.chess.board(), this.customization);
+          this._renderAll();
+        }
+      }, 750);
+      return;
+    }
+
+    const advanceStepOrFinish = () => {
+      this.academyStepIndex++;
+      if (this.academyStepIndex >= lesson.steps.length) {
+        this.gameEnded = true;
+        this.academyCompleted.add(lesson.id);
+        this._saveAcademyProgress();
+        audioFX.playPromote();
+        if (badgeEl) badgeEl.textContent = '✓ Concluída';
+        if (textEl) textEl.textContent = `✓ ${step.explain} — Lição concluída! Clique em "Próxima →" para continuar.`;
+        this._renderAll(nextEvalScore);
+        this._updateTurnBanner(`Lição Concluída: ${lesson.title}`);
+        this._toast(`Lição "${lesson.title}" concluída e salva!`);
+      } else {
+        if (badgeEl) badgeEl.textContent = `Passo ${this.academyStepIndex + 1}/${lesson.steps.length}`;
+        if (textEl) textEl.textContent = `✓ ${step.explain} → Encontre agora o passo ${this.academyStepIndex + 1}.`;
+        this._renderAll();
+      }
+    };
+
+    if (step.reply) {
+      if (textEl) textEl.textContent = `✓ ${step.explain}`;
+      this._renderAll(nextEvalScore);
+      this.isBotThinking = true;
+      setTimeout(() => {
+        this.isBotThinking = false;
+        if (this.gameMode !== 'academy' || this.currentLesson?.id !== lesson.id) return;
+        const replyRes = this.chess.move(step.reply);
+        if (replyRes) {
+          this.lastMove = { from: replyRes.from, to: replyRes.to, san: replyRes.san };
+          this._pushMoveSnapshot(replyRes);
+          const replyEval = evaluateBoardScore(this.chess.fen());
+          const replyPawns = replyEval.mateIn === 0 ? (replyEval.winner === 'w' ? 15 : -15) : replyEval.pawns;
+          this.evalHistory.push(replyPawns);
+          this.scene3d.syncBoard(this.chess.board(), this.customization, { from: replyRes.from, to: replyRes.to });
+          if (isGameCheck(this.chess)) audioFX.playCheck();
+          else if (replyRes.captured) audioFX.playCapture();
+          else audioFX.playMove();
+        }
+        advanceStepOrFinish();
+      }, 520);
+    } else {
+      advanceStepOrFinish();
+    }
+  }
+
+  _showAcademyHint() {
+    const step = this.currentLesson?.steps[this.academyStepIndex];
+    if (!step) return;
+    const textEl = document.getElementById('academy-step-text');
+    if (textEl) textEl.textContent = `Dica: ${step.hint}`;
+
+    const copy = new Chess(this.chess.fen());
+    const mv = copy.move(step.expected[0]);
+    if (mv) {
+      this.hintMove = { from: mv.from, to: mv.to };
+      this._renderHighlights();
+    }
+  }
+
+  _demoAcademyStep() {
+    if (this.gameMode !== 'academy' || this.gameEnded || this.isBotThinking) return;
+    const step = this.currentLesson?.steps[this.academyStepIndex];
+    if (!step?.expected?.[0]) return;
+    const copy = new Chess(this.chess.fen());
+    const mv = copy.move(step.expected[0]);
+    if (mv) {
+      this._commitMove({ from: mv.from, to: mv.to, promotion: mv.promotion || 'q' });
+    }
+  }
+
+  _startNextAcademyLesson() {
+    if (!this.currentLesson) {
+      this._startAcademyLesson(LEARNING_LESSONS[0].id);
+      return;
+    }
+    const idx = LEARNING_LESSONS.findIndex((l) => l.id === this.currentLesson.id);
+    const nextLesson = LEARNING_LESSONS[(idx + 1) % LEARNING_LESSONS.length];
+    this._startAcademyLesson(nextLesson.id);
+  }
+
+  // ---------- Friends & Real-Time Direct Challenge System ----------
+  _getSocialPresenceState() {
+    const modeLabel =
+      this.gameMode === 'online'
+        ? `Sala ${this.multiplayer.currentRoomId || ''}`
+        : this.gameMode === 'academy'
+        ? 'Estudando na Academia'
+        : this.gameMode === 'puzzle'
+        ? 'Desafios Táticos'
+        : 'Em partida';
+    return {
+      playerName: this._getLocalPlayerName(),
+      status: this.isInMenu ? 'online' : 'in_game',
+      activityText: this.isInMenu ? 'No menu / disponível' : modeLabel,
+    };
+  }
+
+  async _onSocialUpdate(data) {
+    if (!data) return;
+    this.socialData = data;
+
+    const myTagEl = document.getElementById('my-friend-tag');
+    if (myTagEl) myTagEl.textContent = data.profile?.friendTag || this.multiplayer.friendTag;
+
+    const pendingCount = (data.incomingRequests?.length || 0) + (data.incomingChallenges?.length || 0);
+    const badgeEl = document.getElementById('friends-notif-badge');
+    if (badgeEl) {
+      badgeEl.textContent = String(pendingCount);
+      badgeEl.classList.toggle('hidden', pendingCount === 0);
+    }
+
+    const challengeBanner = document.getElementById('challenge-banner');
+    const incoming = data.incomingChallenges || [];
+    if (incoming.length > 0 && challengeBanner) {
+      const ch = incoming[0];
+      const cid = ch.challengeId || ch.id;
+      const activeCid = this.activeIncomingChallenge?.challengeId || this.activeIncomingChallenge?.id;
+      if (!this.activeIncomingChallenge || activeCid !== cid) {
+        this.activeIncomingChallenge = ch;
+        const initSec = ch.timeControl?.initialSeconds ?? ch.timeControlSeconds ?? 600;
+        const incSec = ch.timeControl?.incrementSeconds ?? ch.incrementSeconds ?? 0;
+        const mins = initSec > 0 ? `${Math.round(initSec / 60)}+${incSec}` : 'Sem relógio';
+        document.getElementById('challenge-banner-text').textContent =
+          `${ch.fromName} (${ch.fromTag || ''}) convidou você para jogar (${mins}) em sala privada!`;
+        challengeBanner.classList.remove('hidden');
+        this._toast(`Novo desafio de ${ch.fromName}!`);
+      }
+    } else if (challengeBanner && this.activeIncomingChallenge) {
+      challengeBanner.classList.add('hidden');
+      this.activeIncomingChallenge = null;
+    }
+
+    const accepted = data.acceptedChallenges || [];
+    for (const acc of accepted) {
+      const acid = acc.challengeId || acc.id;
+      if (this._handledAcceptedChallenges.has(acid)) continue;
+      this._handledAcceptedChallenges.add(acid);
+      try {
+        await this.multiplayer.ackChallenge(acid);
+        this._toast(`${acc.toName || 'Seu amigo'} aceitou seu desafio! Abrindo sala privada ${acc.roomId}...`);
+        await this._joinOnlineRoomByCode(acc.roomId, acc.accessKey || '');
+      } catch (err) {
+        this._toast(`Erro ao conectar na sala do desafio: ${err.message}`);
+      }
+      break;
+    }
+
+    const modalEl = document.getElementById('modal-friends');
+    if (modalEl && !modalEl.classList.contains('hidden')) {
+      this._renderFriendsModal();
+    }
+  }
+
+  _openFriendsModal() {
+    const friendInp = document.getElementById('friends-player-name-input');
+    if (friendInp) friendInp.value = this._getLocalPlayerName();
+    const myTagEl = document.getElementById('my-friend-tag');
+    if (myTagEl) myTagEl.textContent = this.multiplayer.friendTag;
+
+    this._renderFriendsModal();
+    this._openModal('modal-friends');
+    this.multiplayer.refreshSocial?.();
+  }
+
+  _renderFriendsModal() {
+    const reqListEl = document.getElementById('friend-requests-list');
+    const friendsListEl = document.getElementById('friends-list');
+    if (!reqListEl || !friendsListEl) return;
+
+    const reqs = this.socialData?.incomingRequests || [];
+    reqListEl.innerHTML = '';
+    if (reqs.length === 0) {
+      reqListEl.innerHTML = '<small class="hint-text">Nenhuma solicitação pendente.</small>';
+    } else {
+      reqs.forEach((r) => {
+        const uid = r.uid || r.fromUid;
+        const name = r.name || r.fromName || 'Jogador';
+        const tag = r.friendTag || r.fromTag || uid;
+        const row = document.createElement('div');
+        row.className = 'friend-row';
+        row.innerHTML = `
+          <div class="friend-row-info">
+            <span class="friend-row-name">${this._escapeHtml(name)}</span>
+            <span class="friend-row-sub mono">${this._escapeHtml(tag)}</span>
+          </div>
+          <div class="friend-row-actions">
+            <button class="btn btn-xs btn-primary" data-act="accept">Aceitar</button>
+            <button class="btn btn-xs btn-ghost" data-act="reject">Recusar</button>
+          </div>
+        `;
+        row.querySelector('[data-act="accept"]').addEventListener('click', async () => {
+          await this.multiplayer.respondFriendRequest(uid, true);
+          this._toast(`Agora vocês são amigos!`);
+          await this.multiplayer.refreshSocial?.();
+        });
+        row.querySelector('[data-act="reject"]').addEventListener('click', async () => {
+          await this.multiplayer.respondFriendRequest(uid, false);
+          await this.multiplayer.refreshSocial?.();
+        });
+        reqListEl.appendChild(row);
+      });
+    }
+
+    const friends = this.socialData?.friends || [];
+    friendsListEl.innerHTML = '';
+    if (friends.length === 0) {
+      friendsListEl.innerHTML = '<small class="hint-text">Adicione amigos informando a Tag (#) deles.</small>';
+      return;
+    }
+
+    friends.forEach((f) => {
+      const state = f.onlineState || 'offline';
+      const statusText =
+        state === 'online'
+          ? '● Online agora'
+          : state === 'in_game'
+          ? `◐ ${f.activityText || 'Em partida'}`
+          : '○ Offline';
+      const row = document.createElement('div');
+      row.className = 'friend-row';
+      row.innerHTML = `
+        <div class="friend-row-info">
+          <div class="friend-row-name">
+            <span class="friend-status-dot ${this._escapeHtml(state)}"></span>
+            <span>${this._escapeHtml(f.name || 'Amigo')}</span>
+          </div>
+          <span class="friend-row-sub mono">${this._escapeHtml(f.friendTag || '')} • ${this._escapeHtml(statusText)}</span>
+        </div>
+        <div class="friend-row-actions">
+          <button class="btn btn-xs btn-primary" data-act="challenge" ${state === 'offline' ? 'disabled' : ''}>Desafiar</button>
+          <button class="btn btn-xs btn-ghost" data-act="remove" title="Remover amigo">✕</button>
+        </div>
+      `;
+      row.querySelector('[data-act="challenge"]').addEventListener('click', async () => {
+        try {
+          const [sec, inc] = (document.getElementById('friends-challenge-time')?.value || '600|0')
+            .split('|')
+            .map(Number);
+          await this.multiplayer.sendGameChallenge(f.uid, {
+            playerName: this._getLocalPlayerName(),
+            timeControlSeconds: sec,
+            incrementSeconds: inc,
+          });
+          this._toast(`Desafio enviado para ${f.name}! Quando aceitar, a sala privada abrirá automaticamente.`);
+        } catch (err) {
+          this._toast(`Erro ao desafiar: ${err.message}`);
+        }
+      });
+      row.querySelector('[data-act="remove"]').addEventListener('click', async () => {
+        await this.multiplayer.removeFriend(f.uid);
+        await this.multiplayer.refreshSocial?.();
+        this._toast(`${f.name} removido da lista.`);
+      });
+      friendsListEl.appendChild(row);
+    });
   }
 
   _toast(message) {

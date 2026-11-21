@@ -27,6 +27,8 @@
 
         <nav class="top-actions">
           <button id="btn-new-game" class="btn btn-primary">Nova Partida</button>
+          <button id="btn-open-academy" class="btn btn-ghost">Academia</button>
+          <button id="btn-open-friends" class="btn btn-ghost">Amigos <span id="friends-notif-badge" class="notif-badge hidden">0</span></button>
           <button id="btn-piece-studio" class="btn btn-ghost">Peças 3D</button>
           <button id="btn-online-lobby" class="btn btn-ghost">Multiplayer</button>
           <button id="btn-lighting-toggle" class="btn btn-ghost" title="Alternar iluminação do jogo (Sem Luz / Penumbra / Com Luz)">◐ Luz: Penumbra</button>
@@ -58,7 +60,25 @@
               <div class="menu-card-icon">♞</div>
               <div class="menu-card-body">
                 <strong>Jogar vs Mestres (IA)</strong>
-                <p>Desafie 5 perfis táticos (Sofia a Aegis GM) com avaliação em tempo real.</p>
+                <p>Desafie 6 níveis (Sofia até Omega ~2600+ ELO) com Modo Coach de evolução.</p>
+              </div>
+              <span class="menu-card-arrow">→</span>
+            </button>
+
+            <button class="menu-card" data-menu-action="academy">
+              <div class="menu-card-icon">◈</div>
+              <div class="menu-card-body">
+                <strong>Academia de Xadrez 3D</strong>
+                <p>46 lições interativas guiadas: aberturas, armadilhas, táticas, mates, finais e enciclopédia.</p>
+              </div>
+              <span class="menu-card-arrow">→</span>
+            </button>
+
+            <button class="menu-card" data-menu-action="friends">
+              <div class="menu-card-icon">☍</div>
+              <div class="menu-card-body">
+                <strong>Amigos &amp; Desafios Online</strong>
+                <p>Adicione amigos pela tag (#), acompanhe status online em tempo real e desafie diretamente.</p>
               </div>
               <span class="menu-card-arrow">→</span>
             </button>
@@ -75,8 +95,8 @@
             <button class="menu-card" data-menu-action="online">
               <div class="menu-card-icon">◎</div>
               <div class="menu-card-body">
-                <strong>Salas & Convites Online</strong>
-                <p>Crie sala privada ou pública, gere link de convite e acompanhe presença.</p>
+                <strong>Salas Privadas &amp; Links</strong>
+                <p>Crie sala fechada com senha única no link ou entre por código e acompanhamento ao vivo.</p>
               </div>
               <span class="menu-card-arrow">→</span>
             </button>
@@ -205,6 +225,7 @@
             <div class="gameover-crown">♔</div>
             <h3 id="gameover-title">Fim de Partida</h3>
             <p id="gameover-reason">Resultado</p>
+            <div id="gameover-accuracy" class="gameover-accuracy hidden"></div>
             <div class="gameover-actions">
               <button id="btn-gameover-rematch" class="btn btn-primary">Jogar Novamente</button>
               <button id="btn-gameover-studio" class="btn btn-ghost">Estúdio de Peças</button>
@@ -244,6 +265,31 @@
             </div>
           </div>
 
+          <!-- Interactive Academy Lesson Panel -->
+          <div id="academy-panel" class="academy-panel hidden">
+            <div class="academy-panel-head">
+              <strong id="academy-title">Lição</strong>
+              <span id="academy-progress-badge" class="badge badge-cloud">1/1</span>
+            </div>
+            <p id="academy-step-text" class="academy-step-text"></p>
+            <div class="academy-panel-actions">
+              <button id="btn-academy-hint" class="btn btn-xs btn-ghost">Dica</button>
+              <button id="btn-academy-demo" class="btn btn-xs btn-ghost">Demonstrar</button>
+              <button id="btn-academy-retry" class="btn btn-xs btn-ghost">Repetir</button>
+              <button id="btn-academy-next" class="btn btn-xs btn-primary">Próxima →</button>
+              <button id="btn-academy-catalog" class="btn btn-xs btn-ghost">Índice</button>
+            </div>
+          </div>
+
+          <!-- Evolution Coach Live Feedback Banner -->
+          <div id="coach-alert-banner" class="coach-alert-banner hidden">
+            <p id="coach-alert-text" class="coach-alert-text"></p>
+            <div class="coach-alert-actions">
+              <button id="btn-coach-show-best" class="btn btn-xs btn-ghost">Ver Melhor Lance</button>
+              <button id="btn-coach-retry-move" class="btn btn-xs btn-primary">Refazer Lance</button>
+            </div>
+          </div>
+
           <!-- Action Buttons -->
           <div class="match-actions">
             <button id="btn-hint" class="btn btn-sm btn-ghost" title="Mostrar melhor lance sugerido">Dica</button>
@@ -256,8 +302,14 @@
           <!-- Online Room Info & Chat (Visible only in online mode) -->
           <div id="online-panel" class="online-panel hidden">
             <div class="room-header">
-              <span>Sala: <strong id="room-code-display">------</strong></span>
+              <div class="room-code-meta">
+                <span>Sala: <strong id="room-code-display">------</strong></span>
+                <span id="room-privacy-badge" class="badge hidden"></span>
+              </div>
               <button id="btn-copy-link" class="btn btn-xs btn-ghost">Copiar Link</button>
+            </div>
+            <div id="room-key-wrap" class="room-key-wrap hidden">
+              <span>Senha única: <strong id="room-key-display" class="mono"></strong></span>
             </div>
             <div id="opponent-presence-banner" class="presence-banner">Aguardando oponente entrar...</div>
             <div id="draw-offer-banner" class="draw-offer hidden">
@@ -293,6 +345,7 @@
                 <span id="move-count-badge" class="mono">0 lances</span>
               </div>
             </div>
+            <div id="opening-name-banner" class="opening-name-banner">Posição Inicial</div>
             <div class="eval-chart-wrap" title="Gráfico de vantagem da partida (clique para navegar até o lance)">
               <canvas id="eval-chart-canvas" width="310" height="46"></canvas>
             </div>
@@ -339,7 +392,7 @@
             <div class="mode-grid">
               <button class="mode-option active" data-mode="bot">
                 <strong>Contra Bot IA</strong>
-                <small>5 níveis</small>
+                <small>6 níveis (até Omega)</small>
               </button>
               <button class="mode-option" data-mode="local">
                 <strong>Local 2P</strong>
@@ -359,9 +412,17 @@
               <option value="2">Nível 2 — Lucas • Casual (~1000 ELO)</option>
               <option value="3" selected>Nível 3 — Viktor • Clube (~1400 ELO)</option>
               <option value="4">Nível 4 — Mikhail • Mago Agressivo (~1800 ELO)</option>
-              <option value="5">Nível 5 — Aegis GM • Supremo (~2150 ELO)</option>
+              <option value="5">Nível 5 — Aegis GM • Grande Mestre (~2200 ELO)</option>
+              <option value="6">Nível 6 — Omega Engine • Implacável (~2600+ ELO)</option>
             </select>
             <small id="bot-level-desc" class="hint-text"></small>
+          </div>
+
+          <div class="form-row">
+            <label class="toggle-chip" title="Alerta erros graves e imprecisões em tempo real e mostra precisão no fim da partida">
+              <input type="checkbox" id="chk-coach-mode" checked />
+              <span>Modo Coach de Evolução (avisa erros, sugere refutação e mede precisão)</span>
+            </label>
           </div>
 
           <div class="form-row">
@@ -541,6 +602,12 @@
                   </select>
                 </div>
               </div>
+              <div class="form-row">
+                <label class="toggle-chip" title="Gera link com senha criptográfica única — fecha a sala para quem não possui o link">
+                  <input type="checkbox" id="online-private-chk" checked />
+                  <span>Sala Privada Fechada (somente com link &amp; senha única)</span>
+                </label>
+              </div>
               <button id="btn-create-room" class="btn btn-primary full-width">Criar Sala e Gerar Link</button>
             </div>
 
@@ -552,6 +619,10 @@
                   <input id="join-room-code" type="text" class="input mono" placeholder="Ex: K7M9P2" maxlength="8" />
                   <button id="btn-join-room" class="btn btn-primary">Entrar</button>
                 </div>
+              </div>
+              <div class="form-row">
+                <label for="join-room-key">Senha Única (se sala privada)</label>
+                <input id="join-room-key" type="text" class="input mono" placeholder="Opcional / preenchida via link" maxlength="24" />
               </div>
               <div class="public-rooms-header">
                 <span>Salas Recentes</span>
@@ -644,6 +715,99 @@
           <button class="promo-btn" data-promo="b">♗<span>Bispo</span></button>
           <button class="promo-btn" data-promo="n">♘<span>Cavalo</span></button>
         </div>
+      </div>
+    </div>
+
+    <!-- MODAL 6: Chess Learning Academy -->
+    <div id="modal-academy" class="modal hidden">
+      <div class="modal-card modal-wide">
+        <div class="modal-header">
+          <div>
+            <h2>Academia de Xadrez 3D</h2>
+            <small id="academy-overall-progress" class="hint-text">0/46 lições concluídas</small>
+          </div>
+          <button class="modal-close" data-close="modal-academy">✕</button>
+        </div>
+        <div class="modal-body">
+          <div id="academy-track-tabs" class="academy-track-tabs"></div>
+          <div id="academy-lessons-list" class="academy-lessons-list"></div>
+          <div id="academy-encyclopedia-view" class="academy-encyclopedia-view hidden"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- MODAL 7: Friends & Direct Online Challenges -->
+    <div id="modal-friends" class="modal hidden">
+      <div class="modal-card modal-wide">
+        <div class="modal-header">
+          <h2>Amigos &amp; Desafios Online</h2>
+          <button class="modal-close" data-close="modal-friends">✕</button>
+        </div>
+        <div class="modal-body">
+          <div class="friends-profile-bar">
+            <div class="form-row flex-1">
+              <label for="friends-player-name-input">Seu Nome Público</label>
+              <div class="inline-input">
+                <input id="friends-player-name-input" type="text" class="input" placeholder="Seu apelido" maxlength="20" />
+                <button id="btn-save-profile-name" class="btn btn-ghost">Salvar</button>
+              </div>
+            </div>
+            <div class="friend-tag-box">
+              <span class="hint-text">Sua Tag Única</span>
+              <div class="inline-input">
+                <strong id="my-friend-tag" class="mono friend-tag-value">Jogador#0000</strong>
+                <button id="btn-copy-friend-tag" class="btn btn-xs btn-primary">Copiar Tag</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="lobby-grid">
+            <div class="lobby-box">
+              <h3>Adicionar Amigo</h3>
+              <div class="form-row">
+                <label for="friend-tag-input">Tag do Amigo (ex.: Nome#A7K2)</label>
+                <div class="inline-input">
+                  <input id="friend-tag-input" type="text" class="input mono" placeholder="Nome#XXXX" maxlength="30" />
+                  <button id="btn-add-friend" class="btn btn-primary">Enviar</button>
+                </div>
+              </div>
+              <div class="public-rooms-header">
+                <span>Solicitações Recebidas</span>
+              </div>
+              <div id="friend-requests-list" class="friends-sublist"></div>
+            </div>
+
+            <div class="lobby-box">
+              <div class="public-rooms-header">
+                <h3>Lista de Amigos &amp; Status</h3>
+                <button id="btn-refresh-friends" class="btn btn-xs btn-ghost">↻ Atualizar</button>
+              </div>
+              <div class="form-row">
+                <label for="friends-challenge-time">Tempo do Desafio Direto</label>
+                <select id="friends-challenge-time" class="input">
+                  <option value="180|2">Blitz 3+2</option>
+                  <option value="300|0">Blitz 5+0</option>
+                  <option value="600|0" selected>Rápido 10+0</option>
+                  <option value="900|10">Clássico 15+10</option>
+                  <option value="0|0">Sem Relógio</option>
+                </select>
+              </div>
+              <div id="friends-list" class="friends-sublist"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Floating Live Match Challenge Notification -->
+    <div id="challenge-banner" class="challenge-banner hidden">
+      <div class="challenge-banner-body">
+        <strong>Desafio Recebido</strong>
+        <p id="challenge-banner-text">Um amigo convidou você para jogar!</p>
+      </div>
+      <div class="challenge-banner-actions">
+        <button id="btn-accept-challenge" class="btn btn-sm btn-primary">Aceitar &amp; Entrar</button>
+        <button id="btn-decline-challenge" class="btn btn-sm btn-ghost">Recusar</button>
       </div>
     </div>
 

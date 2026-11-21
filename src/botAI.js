@@ -53,7 +53,7 @@ export const BOT_LEVELS = {
   4: {
     name: 'Mikhail • Mago',
     shortName: 'Mikhail',
-    elo: '~1800',
+    elo: '~1850',
     depth: 4,
     randomness: 0.0,
     description: 'Estilo agressivo com Quiescence Search; adora atacar o Rei.',
@@ -67,15 +67,29 @@ export const BOT_LEVELS = {
   5: {
     name: 'Aegis GM • Supremo',
     shortName: 'Aegis GM',
-    elo: '~2150',
-    depth: 5,
+    elo: '~2250',
+    depth: 6,
     randomness: 0.0,
-    description: 'Iterative Deepening + Transposition Table + Mop-Up de Grande Mestre.',
+    description: 'Busca profunda PVS + LMR + Transposition Table e livro estendido.',
     chatLines: {
       start: 'Modo Grande Mestre ativado. Cada casa conta.',
       capture: 'Vantagem material convertida.',
       check: 'Xeque calculado com precisão.',
       blunder: 'Lance cirúrgico! Impressionante.',
+    },
+  },
+  6: {
+    name: 'Omega Engine • Implacável',
+    shortName: 'Omega',
+    elo: '~2600+',
+    depth: 8,
+    randomness: 0.0,
+    description: 'Modo Extremo para evolução máxima: Null-Move + LMR + PVS + Check Extensions + Segurança do Rei.',
+    chatLines: {
+      start: 'Motor Omega em força máxima. Qualquer erro será punido.',
+      capture: 'Erro tático convertido em vantagem decisiva.',
+      check: 'Pressão implacável sobre o Rei.',
+      blunder: 'Precisão extraordinária. Você encontrou o melhor lance!',
     },
   },
 };
@@ -240,19 +254,68 @@ const PST = {
   ],
 };
 
-// Lightweight curated opening book keyed by normalized FEN board + turn + castling
+// Expanded curated opening book (65+ theoretical lines) keyed by normalized FEN board + turn + castling
 const OPENING_BOOK = {
   'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq': ['e2e4', 'd2d4', 'c2c4', 'g1f3'],
   'rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq': ['e7e5', 'c7c5', 'e7e6', 'c7c6'],
   'rnbqkbnr/pppppppp/8/8/3P4/8/PPP1PPPP/RNBQKBNR b KQkq': ['d7d5', 'g8f6', 'e7e6'],
+  'rnbqkbnr/pppppppp/8/8/2P5/8/PP1PPPPP/RNBQKBNR b KQkq': ['e7e5', 'g8f6', 'c7c5', 'e7e6'],
+  'rnbqkbnr/pppppppp/8/8/8/5N2/PPPPPPPP/RNBQKB1R b KQkq': ['d7d5', 'g8f6', 'c7c5'],
+
+  // 1.e4 e5 complexes (Italian, Ruy Lopez, Scotch, Petroff)
   'rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq': ['g1f3', 'f1c4', 'b1c3'],
   'rnbqkbnr/pppp1ppp/8/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R b KQkq': ['b8c6', 'g8f6'],
   'r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq': ['f1b5', 'f1c4', 'd2d4'],
   'r1bqkbnr/pppp1ppp/2n5/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R b KQkq': ['f8c5', 'g8f6'],
+  'r1bqk1nr/pppp1ppp/2n5/2b1p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq': ['c2c3', 'd2d3', 'e1g1'],
+  'r1bqk1nr/pppp1ppp/2n5/2b1p3/2B1P3/2P2N2/PP1P1PPP/RNBQK2R b KQkq': ['g8f6', 'd7d6'],
+  'r1bqk2r/pppp1ppp/2n2n2/2b1p3/2B1P3/2P2N2/PP1P1PPP/RNBQK2R w KQkq': ['d2d4', 'd2d3', 'e1g1'],
+  'r1bqkb1r/pppp1ppp/2n2n2/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq': ['d2d3', 'f3g5', 'b1c3'],
   'r1bqkbnr/pppp1ppp/2n5/1B2p3/4P3/5N2/PPPP1PPP/RNBQK2R b KQkq': ['a7a6', 'g8f6'],
+  'r1bqkbnr/1ppp1ppp/p1n5/1B2p3/4P3/5N2/PPPP1PPP/RNBQK2R w KQkq': ['b5a4', 'b5c6'],
+  'r1bqkbnr/1ppp1ppp/p1n5/4p3/B3P3/5N2/PPPP1PPP/RNBQK2R b KQkq': ['g8f6', 'd7d6'],
+  'r1bqkb1r/1ppp1ppp/p1n2n2/4p3/B3P3/5N2/PPPP1PPP/RNBQK2R w KQkq': ['e1g1', 'd2d3'],
+  'r1bqkb1r/1ppp1ppp/p1n2n2/4p3/B3P3/5N2/PPPP1PPP/RNBQ1RK1 b kq': ['f8e7', 'b7b5'],
+  'r1bqkbnr/pppp1ppp/2n5/4p3/3PP3/5N2/PPP2PPP/RNBQKB1R b KQkq': ['e5d4'],
+  'r1bqkbnr/pppp1ppp/2n5/8/3pP3/5N2/PPP2PPP/RNBQKB1R w KQkq': ['f3d4'],
+  'rnbqkb1r/pppp1ppp/5n2/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq': ['f3e5', 'b1c3'],
+  'rnbqkb1r/pppp1ppp/5n2/4N3/4P3/8/PPPP1PPP/RNBQKB1R b KQkq': ['d7d6'],
+
+  // Sicilian Defense (Najdorf, Classical, Dragon, Alapin)
   'rnbqkbnr/pp1ppppp/8/2p5/4P3/8/PPPP1PPP/RNBQKBNR w KQkq': ['g1f3', 'b1c3', 'c2c3'],
+  'rnbqkbnr/pp1ppppp/8/2p5/4P3/5N2/PPPP1PPP/RNBQKB1R b KQkq': ['d7d6', 'b8c6', 'e7e6'],
+  'rnbqkbnr/pp2pppp/3p4/2p5/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq': ['d2d4', 'f1b5'],
+  'rnbqkbnr/pp2pppp/3p4/2p5/3PP3/5N2/PPP2PPP/RNBQKB1R b KQkq': ['c5d4'],
+  'rnbqkbnr/pp2pppp/3p4/8/3pP3/5N2/PPP2PPP/RNBQKB1R w KQkq': ['f3d4'],
+  'rnbqkbnr/pp2pppp/3p4/8/3NP3/8/PPP2PPP/RNBQKB1R b KQkq': ['g8f6'],
+  'rnbqkb1r/pp2pppp/3p1n2/8/3NP3/8/PPP2PPP/RNBQKB1R w KQkq': ['b1c3'],
+  'rnbqkb1r/pp2pppp/3p1n2/8/3NP3/2N5/PPP2PPP/R1BQKB1R b KQkq': ['a7a6', 'g7g6', 'e7e5'],
+  'r1bqkbnr/pp1ppppp/2n5/2p5/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq': ['d2d4', 'f1b5'],
+
+  // French & Caro-Kann & Scandinavian
+  'rnbqkbnr/pppp1ppp/4p3/8/4P3/8/PPPP1PPP/RNBQKBNR w KQkq': ['d2d4', 'd2d3'],
+  'rnbqkbnr/ppp2ppp/4p3/3p4/3PP3/8/PPP2PPP/RNBQKBNR w KQkq': ['b1c3', 'b1d2', 'e4e5'],
+  'rnbqkbnr/ppp2ppp/4p3/3pP3/3P4/8/PPP2PPP/RNBQKBNR b KQkq': ['c7c5'],
+  'rnbqkbnr/pp1ppppp/2p5/8/4P3/8/PPPP1PPP/RNBQKBNR w KQkq': ['d2d4', 'b1c3'],
+  'rnbqkbnr/pp2pppp/2p5/3p4/3PP3/8/PPP2PPP/RNBQKBNR w KQkq': ['b1c3', 'e4e5', 'e4d5'],
+  'rnbqkbnr/pp2pppp/2p5/3p4/3PP3/2N5/PPP2PPP/R1BQKBNR b KQkq': ['d5e4'],
+  'rnbqkbnr/ppp1pppp/8/3p4/4P3/8/PPPP1PPP/RNBQKBNR w KQkq': ['e4d5'],
+
+  // 1.d4 openings (Queen's Gambit, Slav, London, King's Indian, Nimzo-Indian)
   'rnbqkbnr/ppp1pppp/8/3p4/3P4/8/PPP1PPPP/RNBQKBNR w KQkq': ['c2c4', 'g1f3', 'c1f4'],
   'rnbqkbnr/ppp1pppp/8/3p4/2PP4/8/PP2PPPP/RNBQKBNR b KQkq': ['e7e6', 'c7c6', 'd5c4'],
+  'rnbqkbnr/ppp2ppp/4p3/3p4/2PP4/8/PP2PPPP/RNBQKBNR w KQkq': ['b1c3', 'g1f3'],
+  'rnbqkbnr/pp2pppp/2p5/3p4/2PP4/8/PP2PPPP/RNBQKBNR w KQkq': ['g1f3', 'b1c3', 'c4d5'],
+  'rnbqkbnr/ppp1pppp/8/3p4/3P1B2/8/PPP1PPPP/RN1QKBNR b KQkq': ['g8f6', 'c7c5', 'e7e6'],
+  'rnbqkb1r/pppppppp/5n2/8/3P4/8/PPP1PPPP/RNBQKBNR w KQkq': ['c2c4', 'g1f3', 'c1f4'],
+  'rnbqkb1r/pppppppp/5n2/8/2PP4/8/PP2PPPP/RNBQKBNR b KQkq': ['e7e6', 'g7g6', 'c7c5'],
+  'rnbqkb1r/pppppp1p/5np1/8/2PP4/8/PP2PPPP/RNBQKBNR w KQkq': ['b1c3', 'g1f3'],
+  'rnbqkb1r/pppppp1p/5np1/8/2PP4/2N5/PP2PPPP/R1BQKBNR b KQkq': ['f8g7', 'd7d5'],
+  'rnbqk2r/ppppppbp/5np1/8/2PP4/2N5/PP2PPPP/R1BQKBNR w KQkq': ['e2e4', 'g1f3'],
+  'rnbqk2r/ppppppbp/5np1/8/2PPP3/2N5/PP3PPP/R1BQKBNR b KQkq': ['d7d6', 'e8g8'],
+  'rnbqk2r/ppp1ppbp/3p1np1/8/2PPP3/2N5/PP3PPP/R1BQKBNR w KQkq': ['g1f3', 'f1e2'],
+  'rnbqkb1r/pppp1ppp/4pn2/8/2PP4/8/PP2PPPP/RNBQKBNR w KQkq': ['b1c3', 'g1f3'],
+  'rnbqkb1r/pppp1ppp/4pn2/8/2PP4/2N5/PP2PPPP/R1BQKBNR b KQkq': ['f8b4', 'd7d5'],
 };
 
 function bookKeyFromFen(fen) {
@@ -301,9 +364,13 @@ export function evaluatePositionWhite(chess) {
   let blackBishops = 0;
   const whitePawnFiles = new Array(8).fill(0);
   const blackPawnFiles = new Array(8).fill(0);
+  const whiteRookFiles = new Array(8).fill(0);
+  const blackRookFiles = new Array(8).fill(0);
   // Track closest enemy pawn row to check passed pawns in O(1) per pawn
   const whiteMaxRow = new Array(8).fill(-1);
   const blackMinRow = new Array(8).fill(8);
+  const pawnGridW = new Array(64).fill(false);
+  const pawnGridB = new Array(64).fill(false);
   let whiteKing = { r: 7, c: 4 };
   let blackKing = { r: 0, c: 4 };
   const piecesList = [];
@@ -323,13 +390,17 @@ export function evaluatePositionWhite(chess) {
       if (sq.type === 'b') {
         if (sq.color === 'w') whiteBishops++;
         else blackBishops++;
-      }
-      if (sq.type === 'p') {
+      } else if (sq.type === 'r') {
+        if (sq.color === 'w') whiteRookFiles[c]++;
+        else blackRookFiles[c]++;
+      } else if (sq.type === 'p') {
         if (sq.color === 'w') {
           whitePawnFiles[c]++;
+          pawnGridW[r * 8 + c] = true;
           if (r > whiteMaxRow[c]) whiteMaxRow[c] = r;
         } else {
           blackPawnFiles[c]++;
+          pawnGridB[r * 8 + c] = true;
           if (r < blackMinRow[c]) blackMinRow[c] = r;
         }
       }
@@ -338,7 +409,7 @@ export function evaluatePositionWhite(chess) {
   }
 
   const isEndgame = whiteMaterial < 1400 && blackMaterial < 1400;
-  const PASSED_PAWN_BONUS = [0, 15, 28, 50, 90, 150, 240, 0];
+  const PASSED_PAWN_BONUS = [0, 15, 28, 52, 95, 160, 255, 0];
 
   for (const p of piecesList) {
     const { r, c, type, color } = p;
@@ -350,7 +421,7 @@ export function evaluatePositionWhite(chess) {
 
     let positionalExtra = 0;
 
-    // Passed pawn detection & advancement bonus
+    // Passed pawn detection, advancement & protected passed pawn bonus
     if (type === 'p') {
       if (color === 'w') {
         let isPassed = true;
@@ -360,7 +431,13 @@ export function evaluatePositionWhite(chess) {
             break;
           }
         }
-        if (isPassed) positionalExtra += PASSED_PAWN_BONUS[7 - r] || 0;
+        if (isPassed) {
+          positionalExtra += PASSED_PAWN_BONUS[7 - r] || 0;
+          const hasSupport =
+            (r < 7 && c > 0 && pawnGridW[(r + 1) * 8 + (c - 1)]) ||
+            (r < 7 && c < 7 && pawnGridW[(r + 1) * 8 + (c + 1)]);
+          if (hasSupport) positionalExtra += 24;
+        }
       } else {
         let isPassed = true;
         for (let adj = Math.max(0, c - 1); adj <= Math.min(7, c + 1); adj++) {
@@ -369,32 +446,54 @@ export function evaluatePositionWhite(chess) {
             break;
           }
         }
-        if (isPassed) positionalExtra += PASSED_PAWN_BONUS[r] || 0;
+        if (isPassed) {
+          positionalExtra += PASSED_PAWN_BONUS[r] || 0;
+          const hasSupport =
+            (r > 0 && c > 0 && pawnGridB[(r - 1) * 8 + (c - 1)]) ||
+            (r > 0 && c < 7 && pawnGridB[(r - 1) * 8 + (c + 1)]);
+          if (hasSupport) positionalExtra += 24;
+        }
       }
-      // Central pawn control
       if ((c === 3 || c === 4) && (r === 3 || r === 4)) positionalExtra += 18;
     }
 
-    // Minor piece development bonus (encourage bringing Knights/Bishops off back rank in opening/midgame)
-    if (!isEndgame && (type === 'n' || type === 'b')) {
-      const homeRow = color === 'w' ? 7 : 0;
-      if (r !== homeRow) positionalExtra += 16;
+    // Minor piece development & Knight Outpost bonus
+    if (type === 'n' || type === 'b') {
+      if (!isEndgame) {
+        const homeRow = color === 'w' ? 7 : 0;
+        if (r !== homeRow) positionalExtra += 16;
+      }
+      if (type === 'n') {
+        if (color === 'w' && r >= 2 && r <= 4) {
+          const defendedByPawn =
+            (c > 0 && pawnGridW[(r + 1) * 8 + (c - 1)]) || (c < 7 && pawnGridW[(r + 1) * 8 + (c + 1)]);
+          const attackableByEnemyPawn =
+            (c > 0 && blackMinRow[c - 1] < r) || (c < 7 && blackMinRow[c + 1] < r);
+          if (defendedByPawn && !attackableByEnemyPawn) positionalExtra += 28;
+        } else if (color === 'b' && r >= 3 && r <= 5) {
+          const defendedByPawn =
+            (c > 0 && pawnGridB[(r - 1) * 8 + (c - 1)]) || (c < 7 && pawnGridB[(r - 1) * 8 + (c + 1)]);
+          const attackableByEnemyPawn =
+            (c > 0 && whiteMaxRow[c - 1] > r) || (c < 7 && whiteMaxRow[c + 1] > r);
+          if (defendedByPawn && !attackableByEnemyPawn) positionalExtra += 28;
+        }
+      }
     }
 
-    // Open & semi-open file bonus for Rooks (only reward forward/connected rooks, not shuffling on back rank corners)
+    // Open, semi-open, doubled Rooks & 7th rank bonus
     if (type === 'r') {
       const ownPawns = color === 'w' ? whitePawnFiles[c] : blackPawnFiles[c];
       const enemyPawns = color === 'w' ? blackPawnFiles[c] : whitePawnFiles[c];
-      if (ownPawns === 0 && enemyPawns === 0) positionalExtra += 20;
-      else if (ownPawns === 0) positionalExtra += 10;
-      if ((color === 'w' && r === 1) || (color === 'b' && r === 6)) positionalExtra += 24;
+      if (ownPawns === 0 && enemyPawns === 0) positionalExtra += 22;
+      else if (ownPawns === 0) positionalExtra += 12;
+      if ((color === 'w' && r === 1) || (color === 'b' && r === 6)) positionalExtra += 26;
     }
 
-    // King tropism (encourage pieces to approach enemy King)
+    // King tropism
     if (type !== 'p' && type !== 'k') {
       const targetKing = color === 'w' ? blackKing : whiteKing;
       const dist = Math.abs(r - targetKing.r) + Math.abs(c - targetKing.c);
-      const weight = type === 'q' ? 2.5 : type === 'r' ? 2.0 : type === 'n' ? 1.8 : 1.4;
+      const weight = type === 'q' ? 2.6 : type === 'r' ? 2.0 : type === 'n' ? 1.8 : 1.4;
       positionalExtra += Math.round((14 - dist) * weight);
     }
 
@@ -405,9 +504,35 @@ export function evaluatePositionWhite(chess) {
     }
   }
 
-  // Bishop pair bonus
-  if (whiteBishops >= 2) score += 35;
-  if (blackBishops >= 2) score -= 35;
+  // Bishop pair & Doubled Rooks bonuses
+  if (whiteBishops >= 2) score += 38;
+  if (blackBishops >= 2) score -= 38;
+  for (let f = 0; f < 8; f++) {
+    if (whiteRookFiles[f] >= 2) score += 18;
+    if (blackRookFiles[f] >= 2) score -= 18;
+  }
+
+  // Middlegame King Pawn Shield & open files near castled King
+  if (!isEndgame) {
+    if (whiteKing.r >= 6 && (whiteKing.c >= 5 || whiteKing.c <= 2)) {
+      for (let df = -1; df <= 1; df++) {
+        const file = whiteKing.c + df;
+        if (file < 0 || file > 7) continue;
+        if (pawnGridW[6 * 8 + file]) score += 16;
+        else if (pawnGridW[5 * 8 + file]) score += 8;
+        else score -= 20;
+      }
+    }
+    if (blackKing.r <= 1 && (blackKing.c >= 5 || blackKing.c <= 2)) {
+      for (let df = -1; df <= 1; df++) {
+        const file = blackKing.c + df;
+        if (file < 0 || file > 7) continue;
+        if (pawnGridB[1 * 8 + file]) score -= 16;
+        else if (pawnGridB[2 * 8 + file]) score -= 8;
+        else score += 20;
+      }
+    }
+  }
 
   // Doubled & isolated pawn penalty
   for (let f = 0; f < 8; f++) {
@@ -426,7 +551,7 @@ export function evaluatePositionWhite(chess) {
     }
   }
 
-  // Endgame / Winning Mop-Up Evaluation: drive losing King to corner & bring winning King close
+  // Endgame / Winning Mop-Up Evaluation
   const matDiff = whiteMaterial - blackMaterial;
   const kingsDist = Math.abs(whiteKing.r - blackKing.r) + Math.abs(whiteKing.c - blackKing.c);
   if (matDiff >= 150 || (isEndgame && matDiff > 0)) {
@@ -467,6 +592,7 @@ class SearchContext {
     this.nodes = 0;
     this.tt = new Map();
     this.killers = new Map();
+    this.historyTable = new Map();
     this.historyCounts = historyCounts;
     this.pathCounts = new Map();
   }
@@ -485,33 +611,56 @@ function moveKey(m) {
   return `${m.from}${m.to}${m.promotion || ''}`;
 }
 
-function scoreMoveForOrdering(move, ttBestKey, killersAtPly) {
+function scoreMoveForOrdering(move, ttBestKey, killersAtPly, historyTable = null) {
   const key = moveKey(move);
-  if (ttBestKey && key === ttBestKey) return 1000000;
+  if (ttBestKey && key === ttBestKey) return 2000000;
   let score = 0;
   if (move.captured) {
     const victim = PIECE_VALUES[move.captured] || 100;
     const attacker = PIECE_VALUES[move.piece] || 100;
     // MVV-LVA
-    score += 100000 + victim * 10 - attacker;
+    score += 1000000 + victim * 10 - attacker;
   }
   if (move.promotion) {
-    score += 90000 + (PIECE_VALUES[move.promotion] || 0);
+    score += 900000 + (PIECE_VALUES[move.promotion] || 0);
   }
   if (killersAtPly && killersAtPly.includes(key)) {
-    score += 50000;
+    score += 500000;
   }
   if (move.san && move.san.includes('+')) {
-    score += 400;
+    score += 45000;
+  }
+  if (historyTable) {
+    score += Math.min(40000, historyTable.get(`${move.color}${move.from}${move.to}`) || 0);
   }
   return score;
 }
 
-function orderMoves(moves, ttBestKey, killersAtPly) {
+function orderMoves(moves, ttBestKey, killersAtPly, historyTable = null) {
   return moves
-    .map((m) => ({ move: m, score: scoreMoveForOrdering(m, ttBestKey, killersAtPly) }))
+    .map((m) => ({ move: m, score: scoreMoveForOrdering(m, ttBestKey, killersAtPly, historyTable) }))
     .sort((a, b) => b.score - a.score)
     .map((item) => item.move);
+}
+
+function hasNonPawnMaterial(chess, turn) {
+  const board = chess.board();
+  for (let r = 0; r < 8; r++) {
+    for (let c = 0; c < 8; c++) {
+      const cell = board[r][c];
+      if (cell && cell.color === turn && cell.type !== 'k' && cell.type !== 'p') {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+function makeNullMoveFen(fen) {
+  const parts = fen.split(' ');
+  parts[1] = parts[1] === 'w' ? 'b' : 'w';
+  parts[3] = '-';
+  return parts.join(' ');
 }
 
 function quiescence(chess, alpha, beta, colorSign, ctx, qDepth = 0) {
@@ -520,16 +669,21 @@ function quiescence(chess, alpha, beta, colorSign, ctx, qDepth = 0) {
 
   const standPat = colorSign * evaluatePositionWhite(chess);
   if (standPat >= beta) return beta;
+  // Delta pruning safety margin (Queen + margin)
+  if (standPat + 1050 < alpha && qDepth >= 1) return alpha;
   if (alpha < standPat) alpha = standPat;
 
-  if (qDepth >= 4) return alpha;
+  if (qDepth >= 6) return alpha;
 
   const captures = chess
     .moves({ verbose: true })
     .filter((m) => m.captured || m.promotion);
 
-  const ordered = orderMoves(captures, null, null);
+  const ordered = orderMoves(captures, null, null, null);
   for (const move of ordered) {
+    const captureVal = (PIECE_VALUES[move.captured] || 0) + (move.promotion ? 800 : 0);
+    if (standPat + captureVal + 200 < alpha && !move.san?.includes('+')) continue;
+
     chess.move(move);
     const score = -quiescence(chess, -beta, -alpha, -colorSign, ctx, qDepth + 1);
     chess.undo();
@@ -541,7 +695,7 @@ function quiescence(chess, alpha, beta, colorSign, ctx, qDepth = 0) {
   return alpha;
 }
 
-function negamax(chess, depth, ply, alpha, beta, colorSign, ctx, useQuiescence) {
+function negamax(chess, depth, ply, alpha, beta, colorSign, ctx, useQuiescence, extLeft = 2) {
   ctx.nodes++;
   if (ctx.checkTime()) return 0;
 
@@ -549,7 +703,7 @@ function negamax(chess, depth, ply, alpha, beta, colorSign, ctx, useQuiescence) 
   const pathSeen = (ctx.pathCounts.get(posKey) || 0) + 1;
   const gameSeen = ctx.historyCounts.get(posKey) || 0;
 
-  // True draw-by-repetition detection in tree with mild contempt (-25 cp, never worse than sacrificing material!)
+  // Draw-by-repetition detection with mild contempt
   if (ply >= 2 && (pathSeen >= 2 || gameSeen >= 2 || (gameSeen >= 1 && pathSeen >= 2))) {
     const staticScore = colorSign * evaluatePositionWhite(chess);
     return staticScore > 80 ? -25 : 0;
@@ -563,8 +717,7 @@ function negamax(chess, depth, ply, alpha, beta, colorSign, ctx, useQuiescence) 
   }
 
   const originalAlpha = alpha;
-  const fenKey = chess.fen();
-  const ttEntry = ctx.tt.get(fenKey);
+  const ttEntry = ctx.tt.get(posKey);
   if (ttEntry && ttEntry.depth >= depth) {
     if (ttEntry.flag === 'EXACT') return ttEntry.value;
     if (ttEntry.flag === 'LOWER') alpha = Math.max(alpha, ttEntry.value);
@@ -579,18 +732,110 @@ function negamax(chess, depth, ply, alpha, beta, colorSign, ctx, useQuiescence) 
     return colorSign * evaluatePositionWhite(chess);
   }
 
+  const inCheck = isGameCheck(chess);
+
+  // Null-Move Pruning (skip in check or pawn/king endgames)
+  if (useQuiescence && depth >= 3 && ply >= 1 && !inCheck && hasNonPawnMaterial(chess, chess.turn())) {
+    const R = depth >= 6 ? 3 : 2;
+    try {
+      const nullChess = new Chess(makeNullMoveFen(chess.fen()));
+      ctx.pathCounts.set(posKey, pathSeen);
+      const nullScore = -negamax(
+        nullChess,
+        depth - 1 - R,
+        ply + 1,
+        -beta,
+        -beta + 1,
+        -colorSign,
+        ctx,
+        useQuiescence,
+        0
+      );
+      ctx.pathCounts.set(posKey, pathSeen - 1);
+      if (ctx.aborted) return 0;
+      if (nullScore >= beta) {
+        return beta;
+      }
+    } catch {
+      ctx.pathCounts.set(posKey, pathSeen - 1);
+    }
+  }
+
   ctx.pathCounts.set(posKey, pathSeen);
 
   const moves = chess.moves({ verbose: true });
   const killersAtPly = ctx.killers.get(ply) || [];
-  const ordered = orderMoves(moves, ttEntry?.bestMove, killersAtPly);
+  const ordered = orderMoves(moves, ttEntry?.bestMove, killersAtPly, ctx.historyTable);
 
   let bestValue = -Infinity;
   let bestMove = null;
 
-  for (const move of ordered) {
+  for (let i = 0; i < ordered.length; i++) {
+    const move = ordered[i];
+    const isQuiet = !move.captured && !move.promotion;
+    const givesCheck = move.san?.includes('+') || move.san?.includes('#');
+    const ext = givesCheck && extLeft > 0 ? 1 : 0;
+
     chess.move(move);
-    const score = -negamax(chess, depth - 1, ply + 1, -beta, -alpha, -colorSign, ctx, useQuiescence);
+
+    let score;
+    // Principal Variation Search (PVS) + Late Move Reductions (LMR)
+    if (i === 0) {
+      score = -negamax(
+        chess,
+        depth - 1 + ext,
+        ply + 1,
+        -beta,
+        -alpha,
+        -colorSign,
+        ctx,
+        useQuiescence,
+        extLeft - ext
+      );
+    } else {
+      let reduction = 0;
+      if (useQuiescence && depth >= 3 && i >= 4 && isQuiet && !inCheck && !givesCheck) {
+        reduction = i >= 9 && depth >= 5 ? 2 : 1;
+      }
+      score = -negamax(
+        chess,
+        Math.max(0, depth - 1 - reduction + ext),
+        ply + 1,
+        -alpha - 1,
+        -alpha,
+        -colorSign,
+        ctx,
+        useQuiescence,
+        extLeft - ext
+      );
+      if (!ctx.aborted && score > alpha && reduction > 0) {
+        score = -negamax(
+          chess,
+          depth - 1 + ext,
+          ply + 1,
+          -alpha - 1,
+          -alpha,
+          -colorSign,
+          ctx,
+          useQuiescence,
+          extLeft - ext
+        );
+      }
+      if (!ctx.aborted && score > alpha && score < beta) {
+        score = -negamax(
+          chess,
+          depth - 1 + ext,
+          ply + 1,
+          -beta,
+          -alpha,
+          -colorSign,
+          ctx,
+          useQuiescence,
+          extLeft - ext
+        );
+      }
+    }
+
     chess.undo();
 
     if (ctx.aborted) break;
@@ -603,12 +848,14 @@ function negamax(chess, depth, ply, alpha, beta, colorSign, ctx, useQuiescence) 
       alpha = score;
     }
     if (alpha >= beta) {
-      if (!move.captured) {
+      if (isQuiet) {
         const key = moveKey(move);
         const list = ctx.killers.get(ply) || [];
         if (!list.includes(key)) {
           ctx.killers.set(ply, [key, list[0]].filter(Boolean));
         }
+        const hKey = `${move.color}${move.from}${move.to}`;
+        ctx.historyTable.set(hKey, (ctx.historyTable.get(hKey) || 0) + depth * depth);
       }
       break;
     }
@@ -621,8 +868,8 @@ function negamax(chess, depth, ply, alpha, beta, colorSign, ctx, useQuiescence) 
     let flag = 'EXACT';
     if (bestValue <= originalAlpha) flag = 'UPPER';
     else if (bestValue >= beta) flag = 'LOWER';
-    if (ctx.tt.size < 40000) {
-      ctx.tt.set(fenKey, { depth, value: bestValue, flag, bestMove: moveKey(bestMove) });
+    if (ctx.tt.size < 120000) {
+      ctx.tt.set(posKey, { depth, value: bestValue, flag, bestMove: moveKey(bestMove) });
     }
   }
 
@@ -648,7 +895,6 @@ function computeRootAntiRepetitionPenalty(chess, move, historyCounts, recentMove
   // Never penalize checkmate!
   if (nextIsMate) return 0;
 
-  // Moderate tie-breaker penalty: breaks loops & oscillations without ever causing material blunders
   const repeatCount = historyCounts.get(nextKey) || 0;
   if (repeatCount >= 2) {
     penalty += 110;
@@ -656,7 +902,6 @@ function computeRootAntiRepetitionPenalty(chess, move, historyCounts, recentMove
     penalty += 45;
   }
 
-  // Penalize immediate reversal of the side's own previous move (A->B then B->A without capture)
   const lastOwnMove = recentMoves.length >= 2 ? recentMoves[recentMoves.length - 2] : null;
   if (lastOwnMove && !move.captured && move.from === lastOwnMove.to && move.to === lastOwnMove.from) {
     penalty += 38;
@@ -707,11 +952,10 @@ export function searchBestMoveSync(fen, level = 3, historyContext = {}) {
     return topSlice[Math.floor(Math.random() * topSlice.length)].move;
   }
 
-  const timeLimitMs = level === 5 ? 900 : level === 4 ? 650 : 400;
+  const timeLimitMs = level >= 6 ? 2600 : level === 5 ? 1400 : level === 4 ? 750 : 450;
   const useQuiescence = level >= 4;
   const ctx = new SearchContext(timeLimitMs, historyCounts);
 
-  // Precompute root penalties so search & iterative deepening avoid repetition lines
   const rootPenalties = new Map();
   for (const m of moves) {
     rootPenalties.set(moveKey(m), computeRootAntiRepetitionPenalty(chess, m, historyCounts, recentMoves));
@@ -719,16 +963,15 @@ export function searchBestMoveSync(fen, level = 3, historyContext = {}) {
 
   let bestOverallMove = moves[0];
   let scoredCandidates = [];
+  const posKey = normalizeFenKey(fen);
 
   const maxDepth = cfg.depth;
-  const startDepth = 1;
 
-  for (let d = startDepth; d <= maxDepth; d++) {
-    // Always complete depth 1 safely so we never fall back to an unsearched moves[0]
+  for (let d = 1; d <= maxDepth; d++) {
     ctx.allowTimeout = d >= 2;
     const currentCandidates = [];
-    const ttEntry = ctx.tt.get(fen);
-    const ordered = orderMoves(moves, ttEntry?.bestMove, null);
+    const ttEntry = ctx.tt.get(posKey);
+    const ordered = orderMoves(moves, ttEntry?.bestMove, null, ctx.historyTable);
 
     let alpha = -Infinity;
     const beta = Infinity;
@@ -759,9 +1002,9 @@ export function searchBestMoveSync(fen, level = 3, historyContext = {}) {
     bestOverallMove = bestInIter;
     scoredCandidates = currentCandidates;
     if (bestInIter) {
-      ctx.tt.set(fen, { depth: d, value: bestIterScore, flag: 'EXACT', bestMove: moveKey(bestInIter) });
+      ctx.tt.set(posKey, { depth: d, value: bestIterScore, flag: 'EXACT', bestMove: moveKey(bestInIter) });
     }
-    if (bestIterScore > 90000) break; // Forced mate found, no need to search deeper
+    if (bestIterScore > 90000) break;
   }
 
   // Controlled slight variety at level 2 & 3 so games feel organic without repeating
@@ -776,6 +1019,55 @@ export function searchBestMoveSync(fen, level = 3, historyContext = {}) {
   }
 
   return bestOverallMove;
+}
+
+/**
+ * Lightweight Coach analysis helper for pointing out best reply/refutation in training.
+ */
+export function analyzePositionBestMove(fen, depth = 3) {
+  const chess = new Chess(fen);
+  const moves = chess.moves({ verbose: true });
+  if (moves.length === 0) return null;
+
+  const bKey = bookKeyFromFen(fen);
+  const bookChoices = OPENING_BOOK[bKey];
+  if (bookChoices && bookChoices.length > 0) {
+    const found = moves.find((m) => moveKey(m) === bookChoices[0]);
+    if (found) {
+      return { san: found.san, from: found.from, to: found.to, promotion: found.promotion };
+    }
+  }
+
+  const colorSign = chess.turn() === 'w' ? 1 : -1;
+  const ctx = new SearchContext(280);
+  let bestMove = moves[0];
+  let bestScore = -Infinity;
+
+  for (let d = 1; d <= depth; d++) {
+    ctx.allowTimeout = d >= 2;
+    const ordered = orderMoves(moves, ctx.tt.get(normalizeFenKey(fen))?.bestMove, null, ctx.historyTable);
+    let alpha = -Infinity;
+    let iterBest = ordered[0];
+    let iterScore = -Infinity;
+    for (const move of ordered) {
+      chess.move(move);
+      const val = -negamax(chess, d - 1, 1, -Infinity, -alpha, -colorSign, ctx, true);
+      chess.undo();
+      if (ctx.aborted) break;
+      if (val > iterScore) {
+        iterScore = val;
+        iterBest = move;
+      }
+      if (val > alpha) alpha = val;
+    }
+    if (ctx.aborted) break;
+    bestMove = iterBest;
+    bestScore = iterScore;
+  }
+
+  return bestMove
+    ? { san: bestMove.san, from: bestMove.from, to: bestMove.to, promotion: bestMove.promotion, scoreCp: bestScore }
+    : null;
 }
 
 let _botWorker = null;
