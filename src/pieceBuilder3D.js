@@ -28,14 +28,14 @@ export const MATERIAL_PRESETS = {
   marble_imperial: {
     id: 'marble_imperial',
     label: 'Mármore Imperial',
-    whiteColor: '#f3efe6',
-    blackColor: '#1e222a',
-    accentColor: '#d4af37',
+    whiteColor: '#e8e4dc',
+    blackColor: '#1b1d22',
+    accentColor: '#a68952',
     metalness: 0.12,
-    roughness: 0.16,
-    emissiveIntensity: 0.18,
+    roughness: 0.24,
+    emissiveIntensity: 0.04,
     transmission: 0,
-    clearcoat: 0.9,
+    clearcoat: 0.55,
   },
   royal_gold: {
     id: 'royal_gold',
@@ -475,7 +475,7 @@ export class PiecePreviewStudio {
   constructor(canvas) {
     this.canvas = canvas;
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color('#090d16');
+    this.scene.background = new THREE.Color('#0b0b0e');
 
     const w = canvas.clientWidth || 280;
     const h = canvas.clientHeight || 280;
@@ -487,34 +487,34 @@ export class PiecePreviewStudio {
     this.renderer.setSize(w, h, false);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.2;
+    this.renderer.toneMappingExposure = 1.0;
     this.renderer.shadowMap.enabled = true;
 
     // Studio lights
-    this.scene.add(new THREE.AmbientLight('#ffffff', 0.85));
-    const keyLight = new THREE.DirectionalLight('#fff4df', 2.4);
+    this.scene.add(new THREE.AmbientLight('#ffffff', 0.65));
+    const keyLight = new THREE.DirectionalLight('#fff4df', 2.0);
     keyLight.position.set(3, 5, 4);
     keyLight.castShadow = true;
     this.scene.add(keyLight);
 
-    const rimLight = new THREE.DirectionalLight('#38bdf8', 1.4);
+    const rimLight = new THREE.DirectionalLight('#94a3b8', 0.65);
     rimLight.position.set(-3, 3, -3);
     this.scene.add(rimLight);
 
-    const warmFill = new THREE.PointLight('#f59e0b', 1.1, 10);
+    const warmFill = new THREE.PointLight('#c29b61', 0.7, 10);
     warmFill.position.set(2, 1.5, -2);
     this.scene.add(warmFill);
 
     // Pedestal disc
     const baseGeo = new THREE.CylinderGeometry(0.68, 0.76, 0.12, 48);
-    const baseMat = new THREE.MeshStandardMaterial({ color: '#162033', metalness: 0.65, roughness: 0.28 });
+    const baseMat = new THREE.MeshStandardMaterial({ color: '#17171b', metalness: 0.35, roughness: 0.45 });
     const base = new THREE.Mesh(baseGeo, baseMat);
     base.position.y = -0.06;
     base.receiveShadow = true;
     this.scene.add(base);
 
     const ringGeo = new THREE.TorusGeometry(0.69, 0.015, 12, 48);
-    const ringMat = new THREE.MeshStandardMaterial({ color: '#38bdf8', emissive: '#0284c7', emissiveIntensity: 0.8 });
+    const ringMat = new THREE.MeshStandardMaterial({ color: '#8c6f44', emissive: '#000000', emissiveIntensity: 0, metalness: 0.6, roughness: 0.35 });
     const ring = new THREE.Mesh(ringGeo, ringMat);
     ring.rotation.x = Math.PI / 2;
     ring.position.y = 0.005;

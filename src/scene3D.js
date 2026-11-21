@@ -3,30 +3,87 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { buildChessPiece3D } from './pieceBuilder3D.js';
 
+export const LIGHTING_MODES = {
+  dark: {
+    id: 'dark',
+    label: 'Sem Luz (Escuro)',
+    shortLabel: 'Sem Luz',
+    ambientIntensity: 0.24,
+    dirIntensity: 0.88,
+    rimIntensity: 0.0,
+    warmIntensity: 0.0,
+    exposure: 0.78,
+    bgMultiplier: 0.55,
+    showAmbientParticles: false,
+    showTrailSparks: false,
+    tileClearcoat: 0.12,
+  },
+  dim: {
+    id: 'dim',
+    label: 'Penumbra (Padrão)',
+    shortLabel: 'Penumbra',
+    ambientIntensity: 0.34,
+    dirIntensity: 1.32,
+    rimIntensity: 0.18,
+    warmIntensity: 0.28,
+    exposure: 0.94,
+    bgMultiplier: 0.78,
+    showAmbientParticles: false,
+    showTrailSparks: false,
+    tileClearcoat: 0.25,
+  },
+  lit: {
+    id: 'lit',
+    label: 'Com Luz (Estúdio)',
+    shortLabel: 'Com Luz',
+    ambientIntensity: 0.48,
+    dirIntensity: 1.95,
+    rimIntensity: 0.45,
+    warmIntensity: 0.55,
+    exposure: 1.12,
+    bgMultiplier: 1.0,
+    showAmbientParticles: true,
+    showTrailSparks: true,
+    tileClearcoat: 0.48,
+  },
+};
+
 export const BOARD_THEMES = {
+  dark_obsidian: {
+    id: 'dark_obsidian',
+    label: 'Obsidiana & Grafite (Escuro)',
+    lightSquare: '#78756e',
+    darkSquare: '#1c1c21',
+    frame: '#0e0e11',
+    frameAccent: '#9a7b4f',
+    groutColor: '#09090b',
+    bgColor: '#070709',
+    roughness: 0.46,
+    metalness: 0.12,
+  },
   classic_wood: {
     id: 'classic_wood',
     label: 'Madeira Nobre Clássica',
-    lightSquare: '#ecd2b4',
-    darkSquare: '#6f4019',
-    frame: '#321c0e',
-    frameAccent: '#d4af37',
-    groutColor: '#1f1108',
-    bgColor: '#0c1018',
-    roughness: 0.34,
-    metalness: 0.08,
+    lightSquare: '#d8be9e',
+    darkSquare: '#5e3514',
+    frame: '#26150a',
+    frameAccent: '#b08948',
+    groutColor: '#160c05',
+    bgColor: '#090807',
+    roughness: 0.38,
+    metalness: 0.06,
   },
   marble_royal: {
     id: 'marble_royal',
     label: 'Mármore Imperial',
-    lightSquare: '#f4f7fb',
-    darkSquare: '#232c3d',
-    frame: '#111622',
-    frameAccent: '#eab308',
-    groutColor: '#0b0f17',
-    bgColor: '#090d16',
-    roughness: 0.14,
-    metalness: 0.18,
+    lightSquare: '#d9dee6',
+    darkSquare: '#232934',
+    frame: '#101217',
+    frameAccent: '#b5924c',
+    groutColor: '#0a0b0e',
+    bgColor: '#08090c',
+    roughness: 0.22,
+    metalness: 0.14,
   },
   cyber_neon: {
     id: 'cyber_neon',
@@ -56,14 +113,14 @@ export const BOARD_THEMES = {
   medieval_stone: {
     id: 'medieval_stone',
     label: 'Pedra Medieval',
-    lightSquare: '#d8dfd0',
-    darkSquare: '#3e463d',
-    frame: '#20241f',
-    frameAccent: '#d97706',
-    groutColor: '#141714',
-    bgColor: '#0d0f0d',
-    roughness: 0.62,
-    metalness: 0.12,
+    lightSquare: '#c7cec0',
+    darkSquare: '#343b33',
+    frame: '#1a1d19',
+    frameAccent: '#a86b2d',
+    groutColor: '#111311',
+    bgColor: '#090b09',
+    roughness: 0.65,
+    metalness: 0.10,
   },
 };
 
@@ -183,7 +240,8 @@ export class Scene3D {
     }
 
     this.scene = new THREE.Scene();
-    this.themeId = 'marble_royal';
+    this.themeId = 'dark_obsidian';
+    this.lightingMode = 'dim';
     const theme = BOARD_THEMES[this.themeId];
     this.scene.background = new THREE.Color(theme.bgColor);
     this.scene.fog = new THREE.FogExp2(theme.bgColor, 0.02);
@@ -200,7 +258,7 @@ export class Scene3D {
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.15;
+    this.renderer.toneMappingExposure = 0.94;
     this.renderer.domElement.style.touchAction = 'none';
     container.appendChild(this.renderer.domElement);
 
@@ -268,8 +326,10 @@ export class Scene3D {
     this.dragPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -0.58);
     this.dragIntersect = new THREE.Vector3();
     this.dragFloorRing = null;
+    this.floorMesh = null;
 
     this._buildBoard();
+    this.setLightingMode(this.lightingMode);
 
     // Pointer interaction (click + hold-and-drag + hover ghost preview)
     this.raycaster = new THREE.Raycaster();
@@ -281,10 +341,10 @@ export class Scene3D {
   }
 
   _setupLights() {
-    this.ambientLight = new THREE.AmbientLight('#ffffff', 0.48);
+    this.ambientLight = new THREE.AmbientLight('#ffffff', 0.34);
     this.scene.add(this.ambientLight);
 
-    this.dirLight = new THREE.DirectionalLight('#fff6e5', 2.1);
+    this.dirLight = new THREE.DirectionalLight('#fff6e5', 1.32);
     this.dirLight.position.set(6, 12, 7);
     this.dirLight.castShadow = true;
     this.dirLight.shadow.mapSize.width = 2048;
@@ -299,13 +359,40 @@ export class Scene3D {
     this.dirLight.shadow.bias = -0.0005;
     this.scene.add(this.dirLight);
 
-    this.rimLight = new THREE.DirectionalLight('#38bdf8', 0.85);
+    this.rimLight = new THREE.DirectionalLight('#94a3b8', 0.18);
     this.rimLight.position.set(-7, 6, -7);
     this.scene.add(this.rimLight);
 
-    this.warmLight = new THREE.PointLight('#fbbf24', 0.65, 18);
+    this.warmLight = new THREE.PointLight('#d69e2e', 0.28, 18);
     this.warmLight.position.set(0, 5, 0);
     this.scene.add(this.warmLight);
+  }
+
+  setLightingMode(modeId = 'dim') {
+    const cfg = LIGHTING_MODES[modeId] || LIGHTING_MODES.dim;
+    this.lightingMode = cfg.id;
+
+    if (this.ambientLight) this.ambientLight.intensity = cfg.ambientIntensity;
+    if (this.dirLight) this.dirLight.intensity = cfg.dirIntensity;
+    if (this.rimLight) this.rimLight.intensity = cfg.rimIntensity;
+    if (this.warmLight) this.warmLight.intensity = cfg.warmIntensity;
+    if (this.renderer) this.renderer.toneMappingExposure = cfg.exposure;
+
+    const theme = BOARD_THEMES[this.themeId] || BOARD_THEMES.dark_obsidian;
+    const bg = new THREE.Color(theme.bgColor).multiplyScalar(cfg.bgMultiplier);
+    this.scene.background = bg;
+    if (this.scene.fog) this.scene.fog.color.copy(bg);
+    if (this.floorMesh?.material) {
+      this.floorMesh.material.color.copy(bg);
+    }
+    if (this.ambientGroup) {
+      this.ambientGroup.visible = Boolean(cfg.showAmbientParticles);
+    }
+    for (const mesh of this.squareMeshes.values()) {
+      if (mesh.material && 'clearcoat' in mesh.material) {
+        mesh.material.clearcoat = cfg.tileClearcoat;
+      }
+    }
   }
 
   _buildBoard() {
@@ -417,9 +504,10 @@ export class Scene3D {
     floor.rotation.x = -Math.PI / 2;
     floor.position.y = -0.44;
     floor.receiveShadow = true;
+    this.floorMesh = floor;
     this.boardGroup.add(floor);
 
-    this._buildAmbientParticles(theme.frameAccent || '#38bdf8');
+    this._buildAmbientParticles(theme.frameAccent || '#9a7b4f');
   }
 
   _buildAmbientParticles(accentHex) {
@@ -455,6 +543,7 @@ export class Scene3D {
     if (!BOARD_THEMES[themeId]) return;
     this.themeId = themeId;
     this._buildBoard();
+    this.setLightingMode(this.lightingMode);
   }
 
   _updatePointerRay(e) {
@@ -485,13 +574,13 @@ export class Scene3D {
     if (!this.dragFloorRing) {
       this.dragFloorRing = new THREE.Mesh(
         new THREE.RingGeometry(0.32, 0.44, 32),
-        new THREE.MeshBasicMaterial({ color: '#38bdf8', side: THREE.DoubleSide, transparent: true, opacity: 0.9 })
+        new THREE.MeshBasicMaterial({ color: '#c29b61', side: THREE.DoubleSide, transparent: true, opacity: 0.78 })
       );
       this.dragFloorRing.rotation.x = -Math.PI / 2;
       this.effectsGroup.add(this.dragFloorRing);
     }
     this.dragFloorRing.position.set(x, 0.025, z);
-    this.dragFloorRing.material.color.set(isValidTarget ? '#10b981' : '#38bdf8');
+    this.dragFloorRing.material.color.set(isValidTarget ? '#6fa889' : '#c29b61');
   }
 
   _clearDragFloorRing() {
@@ -634,7 +723,7 @@ export class Scene3D {
             duration: 0.24,
             arcHeight: 0.25,
             tiltFactor: 0.05,
-            landingColor: '#38bdf8',
+            landingColor: '#c29b61',
           });
           return;
         }
@@ -673,13 +762,13 @@ export class Scene3D {
     if (isCapture) {
       if (!this._ghostCaptureMat) {
         this._ghostCaptureMat = new THREE.MeshPhysicalMaterial({
-          color: '#fb7185',
-          emissive: '#fb7185',
-          emissiveIntensity: 0.75,
+          color: '#c95b63',
+          emissive: '#c95b63',
+          emissiveIntensity: 0.15,
           transparent: true,
-          opacity: 0.42,
-          roughness: 0.2,
-          metalness: 0.1,
+          opacity: 0.34,
+          roughness: 0.35,
+          metalness: 0.08,
           depthWrite: false,
         });
       }
@@ -687,13 +776,13 @@ export class Scene3D {
     }
     if (!this._ghostMoveMat) {
       this._ghostMoveMat = new THREE.MeshPhysicalMaterial({
-        color: '#34d399',
-        emissive: '#34d399',
-        emissiveIntensity: 0.75,
+        color: '#74a88e',
+        emissive: '#74a88e',
+        emissiveIntensity: 0.15,
         transparent: true,
-        opacity: 0.42,
-        roughness: 0.2,
-        metalness: 0.1,
+        opacity: 0.34,
+        roughness: 0.35,
+        metalness: 0.08,
         depthWrite: false,
       });
     }
@@ -846,8 +935,8 @@ export class Scene3D {
         duration: wasDragged ? 0.22 : isKnight ? 0.52 : Math.min(0.55, 0.34 + dist * 0.03),
         arcHeight: wasDragged ? 0.18 : isKnight ? 1.65 : 0.42 + dist * 0.06,
         tiltFactor: wasDragged ? 0.04 : 0.14,
-        trailColor: capturedGroup ? '#f43f5e' : '#38bdf8',
-        landingColor: capturedGroup ? '#f43f5e' : '#38bdf8',
+        trailColor: capturedGroup ? '#c95b63' : '#c29b61',
+        landingColor: capturedGroup ? '#c95b63' : '#c29b61',
         sparkAcc: 0,
         onComplete: () => {
           movingGroup.rotation.set(0, 0, 0);
@@ -872,8 +961,8 @@ export class Scene3D {
           duration: 0.48,
           arcHeight: 0.85,
           tiltFactor: 0.1,
-          trailColor: '#fbbf24',
-          landingColor: '#fbbf24',
+          trailColor: '#b89158',
+          landingColor: '#b89158',
           sparkAcc: 0,
         });
       }
@@ -937,44 +1026,43 @@ export class Scene3D {
       mesh.material.emissiveIntensity = 0;
 
       if (lastMove && (sq === lastMove.from || sq === lastMove.to)) {
-        mesh.material.emissive.set('#f59e0b');
-        mesh.material.emissiveIntensity = 0.25;
+        mesh.material.emissive.set('#b89158');
+        mesh.material.emissiveIntensity = 0.14;
       }
       if (sq === selectedSquare) {
-        mesh.material.emissive.set('#0ea5e9');
-        mesh.material.emissiveIntensity = 0.62;
+        mesh.material.emissive.set('#c29b61');
+        mesh.material.emissiveIntensity = 0.22;
       }
       if (hintMove && (sq === hintMove.from || sq === hintMove.to)) {
-        mesh.material.emissive.set('#a855f7');
-        mesh.material.emissiveIntensity = 0.68;
+        mesh.material.emissive.set('#6fa889');
+        mesh.material.emissiveIntensity = 0.26;
       }
       if (threatMap && threatMap[sq]) {
         const tm = threatMap[sq];
         if (tm === 'danger') {
-          mesh.material.emissive.set('#f97316');
-          mesh.material.emissiveIntensity = Math.max(mesh.material.emissiveIntensity, 0.34);
+          mesh.material.emissive.set('#c95b63');
+          mesh.material.emissiveIntensity = Math.max(mesh.material.emissiveIntensity, 0.22);
         } else if (tm === 'safe') {
-          mesh.material.emissive.set('#0284c7');
-          mesh.material.emissiveIntensity = Math.max(mesh.material.emissiveIntensity, 0.24);
+          mesh.material.emissive.set('#5c8a72');
+          mesh.material.emissiveIntensity = Math.max(mesh.material.emissiveIntensity, 0.16);
         } else if (tm === 'contested') {
-          mesh.material.emissive.set('#a855f7');
-          mesh.material.emissiveIntensity = Math.max(mesh.material.emissiveIntensity, 0.32);
+          mesh.material.emissive.set('#b89158');
+          mesh.material.emissiveIntensity = Math.max(mesh.material.emissiveIntensity, 0.22);
         }
       }
     }
 
-    // King of the Hill golden altar highlights (d4, e4, d5, e5)
+    // King of the Hill altar highlights (d4, e4, d5, e5)
     if (kothMode) {
       for (const hillSq of ['d4', 'e4', 'd5', 'e5']) {
         const { x, z } = squareToCoords(hillSq);
         const hillPad = new THREE.Mesh(
           new THREE.RingGeometry(0.38, 0.46, 4),
-          new THREE.MeshBasicMaterial({ color: '#fbbf24', side: THREE.DoubleSide, transparent: true, opacity: 0.85 })
+          new THREE.MeshBasicMaterial({ color: '#b89158', side: THREE.DoubleSide, transparent: true, opacity: 0.72 })
         );
         hillPad.rotation.x = -Math.PI / 2;
         hillPad.rotation.z = Math.PI / 4;
         hillPad.position.set(x, 0.012, z);
-        hillPad.userData.pulse = true;
         this.markersGroup.add(hillPad);
       }
     }
@@ -986,153 +1074,72 @@ export class Scene3D {
       }
     }
 
-    // Selected square rotating double aura ring
-    let originCoords = null;
-    let isKnightSelected = false;
+    // Selected square clean bronze perimeter frame
     if (selectedSquare) {
-      originCoords = squareToCoords(selectedSquare);
-      const selectedPiece = this.pieceMeshes.get(selectedSquare);
-      isKnightSelected = selectedPiece?.userData?.type === 'n';
-
-      const outerRing = new THREE.Mesh(
-        new THREE.RingGeometry(0.36, 0.46, 32),
-        new THREE.MeshBasicMaterial({ color: '#38bdf8', side: THREE.DoubleSide, transparent: true, opacity: 0.92 })
+      const originCoords = squareToCoords(selectedSquare);
+      const selFrame = new THREE.Mesh(
+        new THREE.RingGeometry(0.55, 0.62, 4),
+        new THREE.MeshBasicMaterial({
+          color: '#c29b61',
+          side: THREE.DoubleSide,
+          transparent: true,
+          opacity: 0.78,
+          depthWrite: false,
+        })
       );
-      outerRing.rotation.x = -Math.PI / 2;
-      outerRing.position.set(originCoords.x, 0.015, originCoords.z);
-      outerRing.userData.pulse = true;
-      this.markersGroup.add(outerRing);
-
-      // Rotating dashed/segmented inner aura
-      const innerArc = new THREE.Mesh(
-        new THREE.RingGeometry(0.24, 0.30, 8, 1, 0, Math.PI * 1.4),
-        new THREE.MeshBasicMaterial({ color: '#fde047', side: THREE.DoubleSide, transparent: true, opacity: 0.9 })
-      );
-      innerArc.rotation.x = -Math.PI / 2;
-      innerArc.position.set(originCoords.x, 0.018, originCoords.z);
-      innerArc.userData.spinZ = 2.6;
-      this.markersGroup.add(innerArc);
+      selFrame.rotation.x = -Math.PI / 2;
+      selFrame.rotation.z = Math.PI / 4;
+      selFrame.position.set(originCoords.x, 0.014, originCoords.z);
+      this.markersGroup.add(selFrame);
     }
 
-    // Animated destination tiles, sonar ripples, spinning crystals, and trajectory arcs
-    legalMoves.forEach((mv, idx) => {
+    // Classic sober tactical markers on valid target squares
+    legalMoves.forEach((mv) => {
       const dest = squareToCoords(mv.to);
       const isCapture = Boolean(mv.captured);
-      const phase = idx * 0.45;
-
-      // Glowing tile pad on the destination square
-      const padColor = isCapture ? '#f43f5e' : '#10b981';
-      const pad = new THREE.Mesh(
-        new THREE.PlaneGeometry(0.88, 0.88),
-        new THREE.MeshBasicMaterial({
-          color: padColor,
-          transparent: true,
-          opacity: isCapture ? 0.34 : 0.24,
-          side: THREE.DoubleSide,
-          depthWrite: false,
-        })
-      );
-      pad.rotation.x = -Math.PI / 2;
-      pad.position.set(dest.x, 0.008, dest.z);
-      pad.userData.padPulse = { base: isCapture ? 0.32 : 0.22, phase };
-      this.markersGroup.add(pad);
-
-      // Expanding sonar ripple ring
-      const ripple = new THREE.Mesh(
-        new THREE.RingGeometry(0.14, 0.20, 28),
-        new THREE.MeshBasicMaterial({
-          color: isCapture ? '#fb7185' : '#34d399',
-          side: THREE.DoubleSide,
-          transparent: true,
-          opacity: 0.9,
-          depthWrite: false,
-        })
-      );
-      ripple.rotation.x = -Math.PI / 2;
-      ripple.position.set(dest.x, 0.014, dest.z);
-      ripple.userData.ripple = { phase };
-      this.markersGroup.add(ripple);
 
       if (isCapture) {
-        // Dual counter-rotating target crosshairs around enemy piece
-        const outerCross = new THREE.Mesh(
-          new THREE.RingGeometry(0.36, 0.45, 24, 1, 0, Math.PI * 1.5),
-          new THREE.MeshBasicMaterial({ color: '#f43f5e', side: THREE.DoubleSide })
-        );
-        outerCross.rotation.x = -Math.PI / 2;
-        outerCross.position.set(dest.x, 0.022, dest.z);
-        outerCross.userData.spinZ = 2.4;
-        this.markersGroup.add(outerCross);
-
-        const innerCross = new THREE.Mesh(
-          new THREE.RingGeometry(0.24, 0.31, 24, 1, 0, Math.PI * 1.5),
-          new THREE.MeshBasicMaterial({ color: '#fda4af', side: THREE.DoubleSide })
-        );
-        innerCross.rotation.x = -Math.PI / 2;
-        innerCross.position.set(dest.x, 0.024, dest.z);
-        innerCross.userData.spinZ = -3.2;
-        this.markersGroup.add(innerCross);
-
-        // Floating capture crystal above enemy piece
-        const capDiamond = new THREE.Mesh(
-          new THREE.OctahedronGeometry(0.13, 0),
-          new THREE.MeshStandardMaterial({
-            color: '#f43f5e',
-            emissive: '#e11d48',
-            emissiveIntensity: 1.1,
-          })
-        );
-        capDiamond.position.set(dest.x, 1.58, dest.z);
-        capDiamond.userData.spinFloat = { baseY: 1.58, amp: 0.08, phase };
-        this.markersGroup.add(capDiamond);
-      } else {
-        // Floating emerald crystal beacon on valid empty square
-        const beacon = new THREE.Mesh(
-          new THREE.OctahedronGeometry(0.14, 0),
-          new THREE.MeshStandardMaterial({
-            color: '#10b981',
-            emissive: '#059669',
-            emissiveIntensity: 0.95,
-            transparent: true,
-            opacity: 0.92,
-          })
-        );
-        beacon.position.set(dest.x, 0.22, dest.z);
-        beacon.userData.spinFloat = { baseY: 0.22, amp: 0.06, phase };
-        this.markersGroup.add(beacon);
-      }
-
-      // Animated Trajectory Curve + Traveling Energy Orb from selected piece to destination
-      if (originCoords) {
-        const startV = new THREE.Vector3(originCoords.x, 0.24, originCoords.z);
-        const endV = new THREE.Vector3(dest.x, 0.14, dest.z);
-        const midV = new THREE.Vector3(
-          (startV.x + endV.x) * 0.5,
-          isKnightSelected ? 1.55 : 0.45 + startV.distanceTo(endV) * 0.06,
-          (startV.z + endV.z) * 0.5
-        );
-        const curve = new THREE.QuadraticBezierCurve3(startV, midV, endV);
-        const tubeGeo = new THREE.TubeGeometry(curve, 20, 0.014, 6, false);
-        const tubeMat = new THREE.MeshBasicMaterial({
-          color: isCapture ? '#fb7185' : '#38bdf8',
-          transparent: true,
-          opacity: 0.34,
-          depthWrite: false,
-        });
-        const tubeMesh = new THREE.Mesh(tubeGeo, tubeMat);
-        this.markersGroup.add(tubeMesh);
-
-        // Traveling pulse orb along the trajectory curve
-        const orb = new THREE.Mesh(
-          new THREE.SphereGeometry(0.052, 10, 10),
+        const capPad = new THREE.Mesh(
+          new THREE.PlaneGeometry(0.88, 0.88),
           new THREE.MeshBasicMaterial({
-            color: isCapture ? '#fda4af' : '#7dd3fc',
+            color: '#c95b63',
             transparent: true,
-            opacity: 0.95,
+            opacity: 0.14,
+            side: THREE.DoubleSide,
+            depthWrite: false,
           })
         );
-        orb.userData.pathCurve = { curve, offset: (idx * 0.17) % 1, speed: 0.85 };
-        this.markersGroup.add(orb);
+        capPad.rotation.x = -Math.PI / 2;
+        capPad.position.set(dest.x, 0.008, dest.z);
+        this.markersGroup.add(capPad);
+
+        const capRing = new THREE.Mesh(
+          new THREE.RingGeometry(0.35, 0.43, 32),
+          new THREE.MeshBasicMaterial({
+            color: '#c95b63',
+            side: THREE.DoubleSide,
+            transparent: true,
+            opacity: 0.82,
+            depthWrite: false,
+          })
+        );
+        capRing.rotation.x = -Math.PI / 2;
+        capRing.position.set(dest.x, 0.016, dest.z);
+        this.markersGroup.add(capRing);
+      } else {
+        const dot = new THREE.Mesh(
+          new THREE.CircleGeometry(0.14, 24),
+          new THREE.MeshBasicMaterial({
+            color: '#74a88e',
+            transparent: true,
+            opacity: 0.68,
+            side: THREE.DoubleSide,
+            depthWrite: false,
+          })
+        );
+        dot.rotation.x = -Math.PI / 2;
+        dot.position.set(dest.x, 0.014, dest.z);
+        this.markersGroup.add(dot);
       }
     });
 
@@ -1140,12 +1147,11 @@ export class Scene3D {
     if (checkSquare) {
       const { x, z } = squareToCoords(checkSquare);
       const alertRing = new THREE.Mesh(
-        new THREE.RingGeometry(0.32, 0.48, 32),
-        new THREE.MeshBasicMaterial({ color: '#ef4444', side: THREE.DoubleSide })
+        new THREE.RingGeometry(0.32, 0.46, 32),
+        new THREE.MeshBasicMaterial({ color: '#b84a54', side: THREE.DoubleSide, transparent: true, opacity: 0.88 })
       );
       alertRing.rotation.x = -Math.PI / 2;
-      alertRing.position.set(x, 0.025, z);
-      alertRing.userData.pulse = true;
+      alertRing.position.set(x, 0.022, z);
       this.markersGroup.add(alertRing);
     }
 
@@ -1158,11 +1164,11 @@ export class Scene3D {
       if (len > 0.01) {
         const arrow = new THREE.ArrowHelper(
           dir.clone().normalize(),
-          new THREE.Vector3(fromC.x, 0.28, fromC.z),
+          new THREE.Vector3(fromC.x, 0.24, fromC.z),
           len,
-          0xc084fc,
-          0.42,
-          0.26
+          0x6fa889,
+          0.38,
+          0.22
         );
         this.markersGroup.add(arrow);
       }
@@ -1213,14 +1219,14 @@ export class Scene3D {
     this.particles.push(p);
   }
 
-  spawnLandingShockwave(x, z, colorHex = '#38bdf8') {
+  spawnLandingShockwave(x, z, colorHex = '#c29b61') {
     const ring = new THREE.Mesh(
       this._sharedShockwaveGeo,
       new THREE.MeshBasicMaterial({
         color: colorHex,
         side: THREE.DoubleSide,
         transparent: true,
-        opacity: 0.92,
+        opacity: 0.38,
         depthWrite: false,
       })
     );
@@ -1242,8 +1248,8 @@ export class Scene3D {
       duration: 0.95,
       targetRotZ: 1.32,
     };
-    this.spawnLandingShockwave(x, z, '#ef4444');
-    setTimeout(() => this.spawnLandingShockwave(x, z, '#fbbf24'), 240);
+    this.spawnLandingShockwave(x, z, '#b84a54');
+    setTimeout(() => this.spawnLandingShockwave(x, z, '#c29b61'), 240);
     // Gentle dramatic camera zoom toward the fallen King
     if (!this.menuOrbit) {
       const zoom = this._getAspectZoomMultiplier();
@@ -1293,9 +1299,9 @@ export class Scene3D {
       g.rotation.x = THREE.MathUtils.clamp(vz * 0.035, -0.35, 0.35);
 
       drag.sparkAcc += dt;
-      if (drag.hasMoved && drag.sparkAcc > 0.045) {
+      if (drag.hasMoved && drag.sparkAcc > 0.045 && LIGHTING_MODES[this.lightingMode]?.showTrailSparks) {
         drag.sparkAcc = 0;
-        this.spawnTrailSpark(g.position.x, g.position.y * 0.5, g.position.z, '#38bdf8');
+        this.spawnTrailSpark(g.position.x, g.position.y * 0.5, g.position.z, '#c29b61');
       }
     } else if (this.selectedSquare && this.pieceMeshes.has(this.selectedSquare)) {
       // Selected piece gentle hover levitation
@@ -1333,7 +1339,7 @@ export class Scene3D {
       anim.group.rotation.x = THREE.MathUtils.clamp(dz * tilt, -0.32, 0.32);
 
       anim.sparkAcc = (anim.sparkAcc || 0) + animDt;
-      if (anim.sparkAcc > 0.055 && anim.trailColor) {
+      if (anim.sparkAcc > 0.055 && anim.trailColor && LIGHTING_MODES[this.lightingMode]?.showTrailSparks) {
         anim.sparkAcc = 0;
         this.spawnTrailSpark(anim.group.position.x, anim.group.position.y, anim.group.position.z, anim.trailColor);
       }
@@ -1341,7 +1347,7 @@ export class Scene3D {
       if (t >= 1) {
         anim.group.position.copy(anim.endPos);
         anim.group.rotation.set(0, 0, 0);
-        this.spawnLandingShockwave(anim.endPos.x, anim.endPos.z, anim.landingColor || '#38bdf8');
+        this.spawnLandingShockwave(anim.endPos.x, anim.endPos.z, anim.landingColor || '#c29b61');
         this.activeAnimations.splice(i, 1);
         if (anim.onComplete) anim.onComplete();
       }
@@ -1353,7 +1359,7 @@ export class Scene3D {
       sw.userData.life += dt;
       const p = Math.min(1, sw.userData.life / sw.userData.maxLife);
       sw.scale.setScalar(1 + p * 2.1);
-      sw.material.opacity = (1 - p) * 0.85;
+      sw.material.opacity = (1 - p) * 0.38;
       if (p >= 1) {
         this.effectsGroup.remove(sw);
         if (sw.geometry !== this._sharedShockwaveGeo) {

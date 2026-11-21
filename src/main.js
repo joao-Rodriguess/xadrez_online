@@ -1,5 +1,5 @@
 import { Chess } from 'chess.js';
-import { Scene3D, BOARD_THEMES } from './scene3D.js';
+import { Scene3D, BOARD_THEMES, LIGHTING_MODES } from './scene3D.js';
 import {
   PIECE_TYPES,
   GEOMETRY_STYLES,
@@ -24,6 +24,8 @@ import { audioFX } from './audioFX.js';
 
 const CUSTOMIZATION_STORAGE_KEY = 'chess3d_piece_customization_v1';
 const MATCH_SNAPSHOTS_KEY = 'chess3d_match_snapshots_v1';
+const BOARD_THEME_STORAGE_KEY = 'chess3d_board_theme_v1';
+const LIGHTING_MODE_STORAGE_KEY = 'chess3d_lighting_mode_v1';
 const PIECE_UNICODE = {
   w: { p: '♙', n: '♘', b: '♗', r: '♖', q: '♕', k: '♔' },
   b: { p: '♟', n: '♞', b: '♝', r: '♜', q: '♛', k: '♚' },
@@ -62,6 +64,7 @@ class ChessRoyaleApp {
     this.historyPreviewPly = null;
     this._lastOpponentStatusKey = null;
     this._serverClockOffsetMs = 0;
+    this.lightingMode = this._loadSavedLightingMode();
     this.lastGameConfig = {
       mode: 'bot',
       variant: 'standard',
@@ -77,6 +80,7 @@ class ChessRoyaleApp {
     this._resetSnapshots();
     this._initScene();
     this._initUI();
+    this._applyLightingMode(this.lightingMode, false);
     this._startClockLoop();
     this._renderAll();
     this._showMainMenu();
@@ -84,6 +88,26 @@ class ChessRoyaleApp {
       this._updateConnectionBadge();
     });
     this._checkUrlInvite();
+  }
+
+  _loadSavedBoardTheme() {
+    try {
+      const saved = localStorage.getItem(BOARD_THEME_STORAGE_KEY);
+      if (saved && BOARD_THEMES[saved]) return saved;
+    } catch {
+      // ignore storage errors
+    }
+    return 'dark_obsidian';
+  }
+
+  _loadSavedLightingMode() {
+    try {
+      const saved = localStorage.getItem(LIGHTING_MODE_STORAGE_KEY);
+      if (saved && LIGHTING_MODES[saved]) return saved;
+    } catch {
+      // ignore storage errors
+    }
+    return 'dim';
   }
 
   _loadCustomization() {
@@ -111,10 +135,48 @@ class ChessRoyaleApp {
       onPieceSelect: (sq) => this.selectPieceAtSquare(sq),
       onPieceDrop: (fromSq, toSq) => this.handlePieceDrop(fromSq, toSq),
     });
+    const savedTheme = this._loadSavedBoardTheme();
+    if (savedTheme !== this.scene3d.themeId) {
+      this.scene3d.setBoardTheme(savedTheme);
+    }
     this.scene3d.syncBoard(this.chess.board(), this.customization);
 
     const studioCanvas = document.getElementById('studio-preview-canvas');
     this.previewStudio = new PiecePreviewStudio(studioCanvas);
+  }
+
+  _applyLightingMode(modeId, save = true) {
+    const cfg = LIGHTING_MODES[modeId] || LIGHTING_MODES.dim;
+    this.lightingMode = cfg.id;
+    if (save) {
+      try {
+        localStorage.setItem(LIGHTING_MODE_STORAGE_KEY, cfg.id);
+      } catch {
+        // ignore storage errors
+      }
+    }
+    this.scene3d?.setLightingMode(cfg.id);
+
+    document.body.classList.remove('theme-dark-nolight', 'theme-dim', 'theme-lit');
+    if (cfg.id === 'dark') document.body.classList.add('theme-dark-nolight');
+    else if (cfg.id === 'lit') document.body.classList.add('theme-lit');
+    else document.body.classList.add('theme-dim');
+
+    const lightingSelectors = [
+      document.getElementById('lighting-mode-select'),
+      document.getElementById('menu-lighting-select'),
+      document.getElementById('settings-lighting-select'),
+    ].filter(Boolean);
+    lightingSelectors.forEach((sel) => {
+      sel.value = cfg.id;
+    });
+
+    const toggleBtn = document.getElementById('btn-lighting-toggle');
+    if (toggleBtn) {
+      if (cfg.id === 'dark') toggleBtn.textContent = '○ Sem Luz';
+      else if (cfg.id === 'lit') toggleBtn.textContent = '☀ Com Luz';
+      else toggleBtn.textContent = '◐ Luz: Penumbra';
+    }
   }
 
   _initUI() {
@@ -136,14 +198,50 @@ class ChessRoyaleApp {
       sel.addEventListener('change', (e) => {
         const val = e.target.value;
         this.scene3d.setBoardTheme(val);
+        try {
+          localStorage.setItem(BOARD_THEME_STORAGE_KEY, val);
+        } catch {
+          // ignore storage errors
+        }
         themeSelectors.forEach((other) => {
           other.value = val;
         });
       });
     });
 
+    // Lighting mode selectors (HUD, Main Menu, Settings Modal) & quick topbar cycle button
+    const lightingSelectors = [
+      document.getElementById('lighting-mode-select'),
+      document.getElementById('menu-lighting-select'),
+      document.getElementById('settings-lighting-select'),
+    ].filter(Boolean);
+
+    lightingSelectors.forEach((sel) => {
+      Object.values(LIGHTING_MODES).forEach((m) => {
+        const opt = document.createElement('option');
+        opt.value = m.id;
+        opt.textContent = m.label;
+        sel.appendChild(opt);
+      });
+      sel.value = this.lightingMode;
+      sel.addEventListener('change', (e) => {
+        this._applyLightingMode(e.target.value, true);
+      });
+    });
+
+    const lightingToggleBtn = document.getElementById('btn-lighting-toggle');
+    if (lightingToggleBtn) {
+      lightingToggleBtn.addEventListener('click', () => {
+        const order = ['dark', 'dim', 'lit'];
+        const next = order[(order.indexOf(this.lightingMode) + 1) % order.length];
+        this._applyLightingMode(next, true);
+        const cfg = LIGHTING_MODES[next];
+        this._toast(`Iluminação: ${cfg.label}`);
+      });
+    }
+
     // Camera presets
-    document.querySelectorAll('.cam-btn').forEach((btn) => {
+    document.querySelectorAll('.cam-btn[data-cam]').forEach((btn) => {
       btn.addEventListener('click', () => {
         this.scene3d.setCameraView(btn.dataset.cam);
       });
@@ -154,7 +252,7 @@ class ChessRoyaleApp {
     const soundChk = document.getElementById('chk-settings-sound');
     const applySoundState = (enabled) => {
       audioFX.setEnabled(enabled);
-      soundBtn.textContent = enabled ? '🔊 Som' : '🔇 Mudo';
+      soundBtn.textContent = enabled ? 'Som' : 'Mudo';
       if (soundChk) soundChk.checked = enabled;
     };
     soundBtn.addEventListener('click', () => applySoundState(!audioFX.isEnabled()));
@@ -209,7 +307,7 @@ class ChessRoyaleApp {
       this.showThreatMap = !this.showThreatMap;
       document.getElementById('btn-threat-map').classList.toggle('active', this.showThreatMap);
       this._renderHighlights();
-      this._toast(this.showThreatMap ? '🛡 Mapa de Ameaças 3D ativado!' : 'Mapa de Ameaças desativado.');
+      this._toast(this.showThreatMap ? 'Mapa de Ameaças 3D ativado.' : 'Mapa de Ameaças desativado.');
     });
     document.getElementById('btn-copy-pgn').addEventListener('click', () => this._copyPgnAndFen());
     document.getElementById('btn-puzzle-hint').addEventListener('click', () => this._showPuzzleHint());
@@ -471,12 +569,12 @@ class ChessRoyaleApp {
 
     document.getElementById('btn-save-firebase').addEventListener('click', async () => {
       const statusEl = document.getElementById('firebase-status-msg');
-      statusEl.textContent = 'Testando conexão segura com o servidor...';
+      statusEl.textContent = 'Testando conexão com o servidor...';
       try {
         const res = await this.multiplayer.enableCloudMode();
-        statusEl.textContent = `🔒 Conectado à Nuvem Segura (Latência: ${res.pingMs ?? '-'} ms).`;
+        statusEl.textContent = `Nuvem conectada (Latência: ${res.pingMs ?? '-'} ms).`;
         this._updateConnectionBadge();
-        this._toast('🔒 Nuvem Segura conectada!');
+        this._toast('Conexão na nuvem ativada.');
       } catch (err) {
         statusEl.textContent = `Aviso: ${err.message}`;
         this._updateConnectionBadge();
@@ -735,7 +833,7 @@ class ChessRoyaleApp {
 
     if (mode === 'bot' && BOT_LEVELS[this.botLevel]?.chatLines?.start) {
       const bot = BOT_LEVELS[this.botLevel];
-      this._toast(`🤖 ${bot.shortName}: "${bot.chatLines.start}"`);
+      this._toast(`${bot.shortName}: "${bot.chatLines.start}"`);
     }
     this._maybeTriggerBotTurn();
   }
@@ -859,15 +957,15 @@ class ChessRoyaleApp {
       if (this.gameMode === 'bot' && (q.symbol === '!!' || q.symbol === '??')) {
         const bot = BOT_LEVELS[this.botLevel];
         if (q.symbol === '!!' && bot?.chatLines?.blunder) {
-          this._toast(`🤖 ${bot.shortName}: "${bot.chatLines.blunder}"`);
+          this._toast(`${bot.shortName}: "${bot.chatLines.blunder}"`);
         }
       }
     } else if (this.gameMode === 'bot' && moverColor !== this.humanColor) {
       const bot = BOT_LEVELS[this.botLevel];
       if (isGameCheck(this.chess) && bot?.chatLines?.check) {
-        this._toast(`🤖 ${bot.shortName}: "${bot.chatLines.check}"`);
+        this._toast(`${bot.shortName}: "${bot.chatLines.check}"`);
       } else if (result.captured && Math.random() < 0.45 && bot?.chatLines?.capture) {
-        this._toast(`🤖 ${bot.shortName}: "${bot.chatLines.capture}"`);
+        this._toast(`${bot.shortName}: "${bot.chatLines.capture}"`);
       }
     }
 
@@ -909,9 +1007,9 @@ class ChessRoyaleApp {
       if (solved) {
         this.gameEnded = true;
         audioFX.playPromote();
-        this._updateTurnBanner(`🧩 Puzzle Resolvido! Lance exato: ${result.san}`);
-        this._toast(`✅ Excelente! "${this.currentPuzzle.title}" resolvido!`);
-        this._renderAll();
+        this._updateTurnBanner(`Desafio resolvido! Lance exato: ${result.san}`);
+        this._toast(`Excelente: "${this.currentPuzzle.title}" resolvido.`);
+        this._renderAll(nextEvalScore);
         setTimeout(() => {
           if (this.gameMode === 'puzzle' && !this.isInMenu) {
             this._startPuzzleMode((this.puzzleIndex + 1) % TACTICAL_PUZZLES.length);
@@ -920,8 +1018,8 @@ class ChessRoyaleApp {
         return;
       }
       audioFX.playCheck();
-      this._toast(`⚠ Quase! "${result.san}" não é a solução ideal. Tente novamente.`);
-      this._renderAll();
+      this._toast(`Quase: "${result.san}" não é o lance ideal. Tente novamente.`);
+      this._renderAll(nextEvalScore);
       setTimeout(() => {
         if (this.gameMode === 'puzzle') {
           this.chess.undo();
@@ -1226,11 +1324,11 @@ class ChessRoyaleApp {
     const h = canvas.height;
     ctx.clearRect(0, 0, w, h);
 
-    ctx.fillStyle = '#070b13';
+    ctx.fillStyle = '#0c0c0f';
     ctx.fillRect(0, 0, w, h);
 
     // Midline (0.0)
-    ctx.strokeStyle = 'rgba(148, 163, 184, 0.25)';
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.14)';
     ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.moveTo(0, h / 2);
@@ -1254,7 +1352,7 @@ class ChessRoyaleApp {
     });
     ctx.lineTo(w, h / 2);
     ctx.closePath();
-    ctx.fillStyle = 'rgba(56, 189, 248, 0.22)';
+    ctx.fillStyle = 'rgba(194, 155, 97, 0.20)';
     ctx.fill();
 
     // Advantage curve line
@@ -1265,7 +1363,7 @@ class ChessRoyaleApp {
       if (idx === 0) ctx.moveTo(x, y);
       else ctx.lineTo(x, y);
     });
-    ctx.strokeStyle = '#38bdf8';
+    ctx.strokeStyle = '#c29b61';
     ctx.lineWidth = 2;
     ctx.stroke();
 
@@ -1273,7 +1371,7 @@ class ChessRoyaleApp {
     if (this.historyPreviewPly !== null && this.historyPreviewPly < data.length) {
       const px = (this.historyPreviewPly / (data.length - 1)) * w;
       const py = toY(data[this.historyPreviewPly]);
-      ctx.fillStyle = '#fbbf24';
+      ctx.fillStyle = '#e6d7be';
       ctx.beginPath();
       ctx.arc(px, py, 3.5, 0, Math.PI * 2);
       ctx.fill();
@@ -1282,7 +1380,7 @@ class ChessRoyaleApp {
 
   async _startQuickMatch() {
     try {
-      this._toast('⚡ Procurando partida rápida na nuvem...');
+      this._toast('Procurando partida rápida na nuvem...');
       const res = await this.multiplayer.quickMatch({
         playerName: this._getLocalPlayerName(),
         timeControlSeconds: 600,
@@ -1293,11 +1391,11 @@ class ChessRoyaleApp {
       this._closeModal('modal-online-lobby');
       this._toast(
         res.matched
-          ? `⚡ Oponente encontrado na sala ${res.roomId}!`
-          : `⚡ Sala rápida ${res.roomId} criada! Aguardando próximo jogador.`
+          ? `Oponente encontrado na sala ${res.roomId}.`
+          : `Sala rápida ${res.roomId} criada. Aguardando oponente.`
       );
     } catch (err) {
-      this._toast(`Erro no Matchmaking: ${err.message}`);
+      this._toast(`Erro no matchmaking: ${err.message}`);
     }
   }
 
@@ -1339,12 +1437,12 @@ class ChessRoyaleApp {
     this.scene3d.setCameraView(puz.playerColor);
     this._updateConnectionBadge();
     this._renderAll();
-    this._toast(`🧩 ${puz.title} (${puz.theme}) — Sua vez!`);
+    this._toast(`${puz.title} (${puz.theme}) — Sua vez.`);
   }
 
   _showPuzzleHint() {
     if (!this.currentPuzzle) return;
-    this._toast(`💡 Dica: ${this.currentPuzzle.hint}`);
+    this._toast(`Dica: ${this.currentPuzzle.hint}`);
     this._requestHint();
   }
 
@@ -1353,7 +1451,7 @@ class ChessRoyaleApp {
     const fen = this.chess.fen();
     const text = `PGN:\n${pgn}\n\nFEN:\n${fen}`;
     navigator.clipboard?.writeText(text).then(
-      () => this._toast('📋 PGN e FEN copiados para a área de transferência!'),
+      () => this._toast('PGN e FEN copiados para a área de transferência.'),
       () => this._toast(`FEN: ${fen}`)
     );
   }
@@ -1534,23 +1632,23 @@ class ChessRoyaleApp {
 
     if (isGameCheckmate(this.chess)) {
       const winner = this.chess.turn() === 'w' ? 'Pretas' : 'Brancas';
-      banner.textContent = `♔ XEQUE-MATE! Vitória das ${winner}!`;
+      banner.textContent = `♔ XEQUE-MATE — Vitória das ${winner}`;
       banner.classList.add('is-check');
       return;
     }
     if (isGameDraw(this.chess)) {
-      banner.textContent = '½-½ Partida empatada!';
+      banner.textContent = '½-½ Partida empatada';
       return;
     }
 
     const sideText = this.chess.turn() === 'w' ? 'Brancas' : 'Pretas';
     if (this.isBotThinking) {
-      banner.textContent = `🤖 Bot (${BOT_LEVELS[this.botLevel].name}) calculando lance...`;
+      banner.textContent = `Bot (${BOT_LEVELS[this.botLevel].name}) calculando lance...`;
       return;
     }
 
     if (isGameCheck(this.chess)) {
-      banner.textContent = `⚠ XEQUE! Vez das ${sideText}`;
+      banner.textContent = `XEQUE — Vez das ${sideText}`;
       banner.classList.add('is-check');
     } else {
       banner.textContent = `Vez das ${sideText}`;
@@ -1564,14 +1662,14 @@ class ChessRoyaleApp {
     if (this.gameMode === 'online') {
       if (mpMode === 'cloud') {
         badge.className = 'badge badge-firebase';
-        badge.textContent = `🔒 Nuvem Segura • Sala ${this.multiplayer.currentRoomId}`;
+        badge.textContent = `Nuvem Online • Sala ${this.multiplayer.currentRoomId}`;
       } else {
         badge.className = 'badge badge-demo';
-        badge.textContent = `Demo Multi-Aba • Sala ${this.multiplayer.currentRoomId}`;
+        badge.textContent = `Demo Local • Sala ${this.multiplayer.currentRoomId}`;
       }
     } else {
       badge.className = mpMode === 'cloud' ? 'badge badge-firebase' : 'badge badge-local';
-      badge.textContent = mpMode === 'cloud' ? '🔒 Nuvem Segura Conectada' : 'Local / Bot IA';
+      badge.textContent = mpMode === 'cloud' ? 'Nuvem Conectada' : 'Local / Bot';
     }
     if (menuPill) {
       menuPill.className = badge.className;
@@ -1712,16 +1810,16 @@ class ChessRoyaleApp {
 
   _getPlayerPresenceInfo(playerObj, nowMs) {
     if (!playerObj) {
-      return { key: 'waiting', label: '⚪ Aguardando', cls: 'presence-pill presence-waiting' };
+      return { key: 'waiting', label: '○ Aguardando', cls: 'presence-pill presence-waiting' };
     }
     const age = nowMs - (playerObj.lastSeen || 0);
     if (playerObj.connected === false || age > 20000) {
-      return { key: 'offline', label: '🔴 Desconectado', cls: 'presence-pill presence-offline' };
+      return { key: 'offline', label: '● Desconectado', cls: 'presence-pill presence-offline' };
     }
     if (age > 9000) {
-      return { key: 'away', label: '🟡 Reconectando...', cls: 'presence-pill presence-away' };
+      return { key: 'away', label: '◐ Reconectando...', cls: 'presence-pill presence-away' };
     }
-    return { key: 'online', label: '🟢 Conectado', cls: 'presence-pill presence-online' };
+    return { key: 'online', label: '● Conectado', cls: 'presence-pill presence-online' };
   }
 
   _updatePresenceUI(room, nowMs) {
@@ -1742,19 +1840,19 @@ class ChessRoyaleApp {
     const bannerEl = document.getElementById('opponent-presence-banner');
 
     if (!oppObj) {
-      bannerEl.textContent = '⚪ Aguardando o outro jogador entrar na sala...';
+      bannerEl.textContent = 'Aguardando o outro jogador entrar na sala...';
     } else if (oppInfo.key === 'online') {
-      bannerEl.textContent = `🟢 ${oppName} está conectado em tempo real`;
+      bannerEl.textContent = `● ${oppName} está conectado em tempo real`;
     } else if (oppInfo.key === 'away') {
-      bannerEl.textContent = `🟡 ${oppName} está com conexão instável...`;
+      bannerEl.textContent = `◐ ${oppName} com conexão instável...`;
     } else {
-      bannerEl.textContent = `🔴 ${oppName} desconectou da partida`;
+      bannerEl.textContent = `● ${oppName} desconectou da partida`;
     }
 
     if (this._lastOpponentStatusKey && this._lastOpponentStatusKey !== oppInfo.key) {
-      if (oppInfo.key === 'online') this._toast(`🟢 ${oppName} está conectado!`);
-      else if (oppInfo.key === 'offline') this._toast(`🔴 ${oppName} desconectou da sala.`);
-      else if (oppInfo.key === 'away') this._toast(`🟡 ${oppName} está reconectando...`);
+      if (oppInfo.key === 'online') this._toast(`${oppName} conectou.`);
+      else if (oppInfo.key === 'offline') this._toast(`${oppName} desconectou da sala.`);
+      else if (oppInfo.key === 'away') this._toast(`${oppName} está reconectando...`);
     }
     this._lastOpponentStatusKey = oppInfo.key;
   }
@@ -1872,10 +1970,10 @@ class ChessRoyaleApp {
     const banner = document.getElementById('lobby-mode-banner');
     if (this.multiplayer.getMode() === 'cloud') {
       banner.innerHTML =
-        '<strong>🔒 Nuvem Segura Conectada:</strong> Suas salas são sincronizadas em tempo real pelo servidor seguro com detecção ao vivo de presença dos jogadores.';
+        '<strong>Nuvem Conectada:</strong> Suas salas são sincronizadas em tempo real pelo servidor com detecção de presença dos jogadores.';
     } else {
       banner.innerHTML =
-        '<strong>Modo Demo Multi-Aba Ativo:</strong> Você pode criar uma sala agora e testar entre duas abas do navegador, ou clicar em <strong>⚙ Config / Nuvem</strong> para ativar o modo nuvem.';
+        '<strong>Modo Demo Multi-Aba Ativo:</strong> Você pode criar uma sala agora e testar entre duas abas do navegador, ou clicar em <strong>Ajustes</strong> para ativar o modo nuvem.';
     }
     this._openModal('modal-online-lobby');
     this._refreshPublicRooms();
@@ -1914,12 +2012,12 @@ class ChessRoyaleApp {
   async _openFirebaseModal() {
     const statusEl = document.getElementById('firebase-status-msg');
     this._openModal('modal-firebase');
-    statusEl.textContent = 'Verificando conexão segura...';
+    statusEl.textContent = 'Verificando conexão com o servidor...';
     const st = await this.multiplayer.checkCloudStatus();
     if (st.ok) {
-      statusEl.textContent = `🔒 Status: Nuvem Segura Conectada (Latência: ${st.pingMs ?? '-'} ms).`;
+      statusEl.textContent = `Status: Nuvem Conectada (Latência: ${st.pingMs ?? '-'} ms).`;
     } else {
-      statusEl.textContent = '🟡 Status: Modo Demo Multi-Aba Local ativo.';
+      statusEl.textContent = 'Status: Modo Demo Multi-Aba Local ativo.';
     }
     this._updateConnectionBadge();
   }
