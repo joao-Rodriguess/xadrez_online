@@ -33,12 +33,15 @@ import {
   isGameOver,
 } from './botAI.js';
 import { MultiplayerManager } from './firebaseMultiplayer.js';
-import { audioFX } from './audioFX.js';
+import { audioFX, MUSIC_TRACKS } from './audioFX.js';
 
 const CUSTOMIZATION_STORAGE_KEY = 'chess3d_piece_customization_v1';
 const MATCH_SNAPSHOTS_KEY = 'chess3d_match_snapshots_v1';
 const BOARD_THEME_STORAGE_KEY = 'chess3d_board_theme_v1';
 const LIGHTING_MODE_STORAGE_KEY = 'chess3d_lighting_mode_v1';
+const MUSIC_TRACK_STORAGE_KEY = 'chess3d_music_track_v1';
+const MUSIC_VOLUME_STORAGE_KEY = 'chess3d_music_volume_v1';
+const MOVE_LIGHT_GUIDES_STORAGE_KEY = 'chess3d_move_light_guides_v1';
 const PIECE_UNICODE = {
   w: { p: '♙', n: '♘', b: '♗', r: '♖', q: '♕', k: '♔' },
   b: { p: '♟', n: '♞', b: '♝', r: '♜', q: '♛', k: '♚' },
@@ -78,6 +81,9 @@ class ChessRoyaleApp {
     this._lastOpponentStatusKey = null;
     this._serverClockOffsetMs = 0;
     this.lightingMode = this._loadSavedLightingMode();
+    this.musicTrack = this._loadSavedMusicTrack();
+    this.musicVolume = this._loadSavedMusicVolume();
+    this.moveLightGuides = this._loadSavedLightGuides();
     this.lastGameConfig = {
       mode: 'bot',
       variant: 'standard',
@@ -94,6 +100,9 @@ class ChessRoyaleApp {
     this._initScene();
     this._initUI();
     this._applyLightingMode(this.lightingMode, false);
+    this._applyMusicVolume(this.musicVolume, false);
+    this._applyMusicTrack(this.musicTrack, false);
+    this._applyMoveLightGuides(this.moveLightGuides, false);
     this._startClockLoop();
     this._renderAll();
     this._showMainMenu();
@@ -101,6 +110,36 @@ class ChessRoyaleApp {
       this._updateConnectionBadge();
     });
     this._checkUrlInvite();
+  }
+
+  _loadSavedMusicTrack() {
+    try {
+      const saved = localStorage.getItem(MUSIC_TRACK_STORAGE_KEY);
+      if (saved && MUSIC_TRACKS[saved]) return saved;
+    } catch {
+      // ignore storage errors
+    }
+    return 'grandmaster_nocturne';
+  }
+
+  _loadSavedMusicVolume() {
+    try {
+      const saved = Number(localStorage.getItem(MUSIC_VOLUME_STORAGE_KEY));
+      if (Number.isFinite(saved) && saved >= 0 && saved <= 1) return saved;
+    } catch {
+      // ignore storage errors
+    }
+    return 0.45;
+  }
+
+  _loadSavedLightGuides() {
+    try {
+      const saved = localStorage.getItem(MOVE_LIGHT_GUIDES_STORAGE_KEY);
+      if (saved === 'false') return false;
+    } catch {
+      // ignore storage errors
+    }
+    return true;
   }
 
   _loadSavedBoardTheme() {
@@ -192,6 +231,73 @@ class ChessRoyaleApp {
     }
   }
 
+  _applyMusicTrack(trackId, save = true) {
+    const cfg = MUSIC_TRACKS[trackId] || MUSIC_TRACKS.off;
+    this.musicTrack = cfg.id;
+    if (save) {
+      try {
+        localStorage.setItem(MUSIC_TRACK_STORAGE_KEY, cfg.id);
+      } catch {
+        // ignore storage errors
+      }
+    }
+    audioFX.setMusicTrack(cfg.id);
+
+    const musicSelectors = [
+      document.getElementById('music-track-select'),
+      document.getElementById('menu-music-select'),
+      document.getElementById('settings-music-select'),
+    ].filter(Boolean);
+    musicSelectors.forEach((sel) => {
+      sel.value = cfg.id;
+    });
+
+    const toggleBtn = document.getElementById('btn-music-toggle');
+    if (toggleBtn) {
+      toggleBtn.textContent = cfg.id === 'off' ? '♪ Música: Off' : `♪ ${cfg.shortLabel}`;
+    }
+  }
+
+  _applyMusicVolume(vol, save = true) {
+    const clamped = Math.max(0, Math.min(1, Number(vol)));
+    this.musicVolume = Number.isFinite(clamped) ? clamped : 0.45;
+    if (save) {
+      try {
+        localStorage.setItem(MUSIC_VOLUME_STORAGE_KEY, String(this.musicVolume));
+      } catch {
+        // ignore storage errors
+      }
+    }
+    audioFX.setMusicVolume(this.musicVolume);
+
+    const pct = Math.round(this.musicVolume * 100);
+    const slider = document.getElementById('settings-music-volume');
+    if (slider) slider.value = String(pct);
+    const lbl = document.getElementById('val-music-volume');
+    if (lbl) lbl.textContent = `${pct}%`;
+  }
+
+  _applyMoveLightGuides(enabled, save = true) {
+    this.moveLightGuides = Boolean(enabled);
+    if (save) {
+      try {
+        localStorage.setItem(MOVE_LIGHT_GUIDES_STORAGE_KEY, String(this.moveLightGuides));
+      } catch {
+        // ignore storage errors
+      }
+    }
+    this.scene3d?.setMoveLightGuides(this.moveLightGuides);
+
+    const checkboxes = [
+      document.getElementById('chk-light-guides'),
+      document.getElementById('chk-menu-light-guides'),
+      document.getElementById('chk-settings-light-guides'),
+    ].filter(Boolean);
+    checkboxes.forEach((chk) => {
+      chk.checked = this.moveLightGuides;
+    });
+  }
+
   _initUI() {
     // Board themes dropdowns (HUD, Main Menu, Settings Modal)
     const themeSelectors = [
@@ -252,6 +358,65 @@ class ChessRoyaleApp {
         this._toast(`Iluminação: ${cfg.label}`);
       });
     }
+
+    // Background Music Track selectors, volume slider & quick topbar cycle button
+    const musicSelectors = [
+      document.getElementById('music-track-select'),
+      document.getElementById('menu-music-select'),
+      document.getElementById('settings-music-select'),
+    ].filter(Boolean);
+
+    musicSelectors.forEach((sel) => {
+      Object.values(MUSIC_TRACKS).forEach((t) => {
+        const opt = document.createElement('option');
+        opt.value = t.id;
+        opt.textContent = t.label;
+        sel.appendChild(opt);
+      });
+      sel.value = this.musicTrack;
+      sel.addEventListener('change', (e) => {
+        this._applyMusicTrack(e.target.value, true);
+        const cfg = MUSIC_TRACKS[this.musicTrack];
+        this._toast(cfg ? cfg.label : 'Música atualizada');
+      });
+    });
+
+    const musicToggleBtn = document.getElementById('btn-music-toggle');
+    if (musicToggleBtn) {
+      musicToggleBtn.addEventListener('click', () => {
+        const keys = Object.keys(MUSIC_TRACKS);
+        const next = keys[(keys.indexOf(this.musicTrack) + 1) % keys.length];
+        this._applyMusicTrack(next, true);
+        const cfg = MUSIC_TRACKS[next];
+        this._toast(cfg.id === 'off' ? 'Música de fundo desligada.' : `Tocando: ${cfg.label}`);
+      });
+    }
+
+    const musicVolSlider = document.getElementById('settings-music-volume');
+    if (musicVolSlider) {
+      musicVolSlider.addEventListener('input', (e) => {
+        this._applyMusicVolume(Number(e.target.value) / 100, true);
+      });
+    }
+
+    // Optional light-guide animations for legal destination squares
+    const lightGuideCheckboxes = [
+      document.getElementById('chk-light-guides'),
+      document.getElementById('chk-menu-light-guides'),
+      document.getElementById('chk-settings-light-guides'),
+    ].filter(Boolean);
+
+    lightGuideCheckboxes.forEach((chk) => {
+      chk.checked = this.moveLightGuides;
+      chk.addEventListener('change', (e) => {
+        this._applyMoveLightGuides(e.target.checked, true);
+        this._toast(
+          e.target.checked
+            ? 'Animações de luz nos destinos ativadas.'
+            : 'Animações de luz desativadas (marcadores discretos).'
+        );
+      });
+    });
 
     // Quick piece set selectors (HUD, Main Menu, Settings Modal)
     const pieceSetSelectors = [

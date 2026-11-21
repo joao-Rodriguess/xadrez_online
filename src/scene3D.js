@@ -336,6 +336,17 @@ export class Scene3D {
     this._sharedSparkGeo = new THREE.OctahedronGeometry(0.036, 0);
     this._sharedCaptureGeo = new THREE.OctahedronGeometry(0.06, 0);
     this._sharedShockwaveGeo = new THREE.RingGeometry(0.18, 0.28, 32);
+    this._sharedPadGeo = new THREE.PlaneGeometry(0.88, 0.88);
+    this._sharedRippleGeo = new THREE.RingGeometry(0.14, 0.20, 28);
+    this._sharedBeaconGeo = new THREE.OctahedronGeometry(0.135, 0);
+    this._sharedOrbGeo = new THREE.SphereGeometry(0.052, 10, 10);
+    this._sharedOuterRingGeo = new THREE.RingGeometry(0.36, 0.46, 32);
+    this._sharedInnerArcGeo = new THREE.RingGeometry(0.24, 0.30, 8, 1, 0, Math.PI * 1.4);
+    this._sharedOuterCrossGeo = new THREE.RingGeometry(0.36, 0.45, 24, 1, 0, Math.PI * 1.5);
+    this._sharedInnerCrossGeo = new THREE.RingGeometry(0.24, 0.31, 24, 1, 0, Math.PI * 1.5);
+    this._sharedDotGeo = new THREE.CircleGeometry(0.14, 24);
+    this._sharedCapRingGeo = new THREE.RingGeometry(0.35, 0.43, 32);
+    this._sharedSelFrameGeo = new THREE.RingGeometry(0.55, 0.62, 4);
     this._ghostPieceCache = new Map();
     this._ghostMoveMat = null;
     this._ghostCaptureMat = null;
@@ -346,6 +357,8 @@ export class Scene3D {
     this.hoveredTargetSquare = null;
     this.lastBoardMatrix = null;
     this.lastCustomization = null;
+    this.moveLightGuides = true;
+    this._lastHighlightOpts = null;
     this.dragState = null;
     this.dragPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -0.58);
     this.dragIntersect = new THREE.Vector3();
@@ -416,6 +429,13 @@ export class Scene3D {
       if (mesh.material && 'clearcoat' in mesh.material) {
         mesh.material.clearcoat = cfg.tileClearcoat;
       }
+    }
+  }
+
+  setMoveLightGuides(enabled) {
+    this.moveLightGuides = Boolean(enabled);
+    if (this._lastHighlightOpts) {
+      this.updateHighlights(this._lastHighlightOpts);
     }
   }
 
@@ -1034,6 +1054,15 @@ export class Scene3D {
     kothMode = false,
     threatMap = null,
   }) {
+    this._lastHighlightOpts = {
+      selectedSquare,
+      legalMoves,
+      lastMove,
+      checkSquare,
+      hintMove,
+      kothMode,
+      threatMap,
+    };
     this.selectedSquare = selectedSquare;
     this.legalMoveTargets.clear();
     for (const mv of legalMoves) {
@@ -1043,7 +1072,14 @@ export class Scene3D {
     this._clearGhostPreview();
 
     while (this.markersGroup.children.length > 0) {
-      this.markersGroup.remove(this.markersGroup.children[0]);
+      const m = this.markersGroup.children[0];
+      this.markersGroup.remove(m);
+      if (m.userData?.ownGeo) {
+        m.geometry?.dispose();
+      }
+      if (m.material && !Array.isArray(m.material)) {
+        m.material.dispose();
+      }
     }
 
     // Reset tile emissive tints and ensure non-selected pieces sit cleanly on y = 0
@@ -1056,8 +1092,8 @@ export class Scene3D {
         mesh.material.emissiveIntensity = 0.14;
       }
       if (sq === selectedSquare) {
-        mesh.material.emissive.set('#c29b61');
-        mesh.material.emissiveIntensity = 0.22;
+        mesh.material.emissive.set(this.moveLightGuides ? '#0ea5e9' : '#c29b61');
+        mesh.material.emissiveIntensity = this.moveLightGuides ? 0.42 : 0.22;
       }
       if (hintMove && (sq === hintMove.from || sq === hintMove.to)) {
         mesh.material.emissive.set('#6fa889');
@@ -1089,6 +1125,8 @@ export class Scene3D {
         hillPad.rotation.x = -Math.PI / 2;
         hillPad.rotation.z = Math.PI / 4;
         hillPad.position.set(x, 0.012, z);
+        hillPad.userData.ownGeo = true;
+        if (this.moveLightGuides) hillPad.userData.pulse = true;
         this.markersGroup.add(hillPad);
       }
     }
@@ -1100,33 +1138,167 @@ export class Scene3D {
       }
     }
 
-    // Selected square clean bronze perimeter frame
+    let originCoords = null;
+    let isKnightSelected = false;
     if (selectedSquare) {
-      const originCoords = squareToCoords(selectedSquare);
-      const selFrame = new THREE.Mesh(
-        new THREE.RingGeometry(0.55, 0.62, 4),
-        new THREE.MeshBasicMaterial({
-          color: '#c29b61',
-          side: THREE.DoubleSide,
-          transparent: true,
-          opacity: 0.78,
-          depthWrite: false,
-        })
-      );
-      selFrame.rotation.x = -Math.PI / 2;
-      selFrame.rotation.z = Math.PI / 4;
-      selFrame.position.set(originCoords.x, 0.014, originCoords.z);
-      this.markersGroup.add(selFrame);
+      originCoords = squareToCoords(selectedSquare);
+      const selectedPiece = this.pieceMeshes.get(selectedSquare);
+      isKnightSelected = selectedPiece?.userData?.type === 'n';
+
+      if (this.moveLightGuides) {
+        const outerRing = new THREE.Mesh(
+          this._sharedOuterRingGeo,
+          new THREE.MeshBasicMaterial({ color: '#38bdf8', side: THREE.DoubleSide, transparent: true, opacity: 0.92 })
+        );
+        outerRing.rotation.x = -Math.PI / 2;
+        outerRing.position.set(originCoords.x, 0.015, originCoords.z);
+        outerRing.userData.pulse = true;
+        this.markersGroup.add(outerRing);
+
+        const innerArc = new THREE.Mesh(
+          this._sharedInnerArcGeo,
+          new THREE.MeshBasicMaterial({ color: '#fde047', side: THREE.DoubleSide, transparent: true, opacity: 0.9 })
+        );
+        innerArc.rotation.x = -Math.PI / 2;
+        innerArc.position.set(originCoords.x, 0.018, originCoords.z);
+        innerArc.userData.spinZ = 2.6;
+        this.markersGroup.add(innerArc);
+      } else {
+        const selFrame = new THREE.Mesh(
+          this._sharedSelFrameGeo,
+          new THREE.MeshBasicMaterial({
+            color: '#c29b61',
+            side: THREE.DoubleSide,
+            transparent: true,
+            opacity: 0.78,
+            depthWrite: false,
+          })
+        );
+        selFrame.rotation.x = -Math.PI / 2;
+        selFrame.rotation.z = Math.PI / 4;
+        selFrame.position.set(originCoords.x, 0.014, originCoords.z);
+        this.markersGroup.add(selFrame);
+      }
     }
 
-    // Classic sober tactical markers on valid target squares
-    legalMoves.forEach((mv) => {
+    // Legal move markers: optional animated light guides vs clean static dots
+    legalMoves.forEach((mv, idx) => {
       const dest = squareToCoords(mv.to);
       const isCapture = Boolean(mv.captured);
 
-      if (isCapture) {
+      if (this.moveLightGuides) {
+        const phase = idx * 0.45;
+        const padColor = isCapture ? '#f43f5e' : '#10b981';
+        const pad = new THREE.Mesh(
+          this._sharedPadGeo,
+          new THREE.MeshBasicMaterial({
+            color: padColor,
+            transparent: true,
+            opacity: isCapture ? 0.34 : 0.24,
+            side: THREE.DoubleSide,
+            depthWrite: false,
+          })
+        );
+        pad.rotation.x = -Math.PI / 2;
+        pad.position.set(dest.x, 0.008, dest.z);
+        pad.userData.padPulse = { base: isCapture ? 0.32 : 0.22, phase };
+        this.markersGroup.add(pad);
+
+        const ripple = new THREE.Mesh(
+          this._sharedRippleGeo,
+          new THREE.MeshBasicMaterial({
+            color: isCapture ? '#fb7185' : '#34d399',
+            side: THREE.DoubleSide,
+            transparent: true,
+            opacity: 0.9,
+            depthWrite: false,
+          })
+        );
+        ripple.rotation.x = -Math.PI / 2;
+        ripple.position.set(dest.x, 0.014, dest.z);
+        ripple.userData.ripple = { phase };
+        this.markersGroup.add(ripple);
+
+        if (isCapture) {
+          const outerCross = new THREE.Mesh(
+            this._sharedOuterCrossGeo,
+            new THREE.MeshBasicMaterial({ color: '#f43f5e', side: THREE.DoubleSide })
+          );
+          outerCross.rotation.x = -Math.PI / 2;
+          outerCross.position.set(dest.x, 0.022, dest.z);
+          outerCross.userData.spinZ = 2.4;
+          this.markersGroup.add(outerCross);
+
+          const innerCross = new THREE.Mesh(
+            this._sharedInnerCrossGeo,
+            new THREE.MeshBasicMaterial({ color: '#fda4af', side: THREE.DoubleSide })
+          );
+          innerCross.rotation.x = -Math.PI / 2;
+          innerCross.position.set(dest.x, 0.024, dest.z);
+          innerCross.userData.spinZ = -3.2;
+          this.markersGroup.add(innerCross);
+
+          const capDiamond = new THREE.Mesh(
+            this._sharedBeaconGeo,
+            new THREE.MeshStandardMaterial({
+              color: '#f43f5e',
+              emissive: '#e11d48',
+              emissiveIntensity: 1.05,
+            })
+          );
+          capDiamond.position.set(dest.x, 1.58, dest.z);
+          capDiamond.userData.spinFloat = { baseY: 1.58, amp: 0.08, phase };
+          this.markersGroup.add(capDiamond);
+        } else {
+          const beacon = new THREE.Mesh(
+            this._sharedBeaconGeo,
+            new THREE.MeshStandardMaterial({
+              color: '#10b981',
+              emissive: '#059669',
+              emissiveIntensity: 0.9,
+              transparent: true,
+              opacity: 0.92,
+            })
+          );
+          beacon.position.set(dest.x, 0.22, dest.z);
+          beacon.userData.spinFloat = { baseY: 0.22, amp: 0.06, phase };
+          this.markersGroup.add(beacon);
+        }
+
+        if (originCoords) {
+          const startV = new THREE.Vector3(originCoords.x, 0.24, originCoords.z);
+          const endV = new THREE.Vector3(dest.x, 0.14, dest.z);
+          const midV = new THREE.Vector3(
+            (startV.x + endV.x) * 0.5,
+            isKnightSelected ? 1.55 : 0.45 + startV.distanceTo(endV) * 0.06,
+            (startV.z + endV.z) * 0.5
+          );
+          const curve = new THREE.QuadraticBezierCurve3(startV, midV, endV);
+          const tubeGeo = new THREE.TubeGeometry(curve, 20, 0.014, 6, false);
+          const tubeMat = new THREE.MeshBasicMaterial({
+            color: isCapture ? '#fb7185' : '#38bdf8',
+            transparent: true,
+            opacity: 0.34,
+            depthWrite: false,
+          });
+          const tubeMesh = new THREE.Mesh(tubeGeo, tubeMat);
+          tubeMesh.userData.ownGeo = true;
+          this.markersGroup.add(tubeMesh);
+
+          const orb = new THREE.Mesh(
+            this._sharedOrbGeo,
+            new THREE.MeshBasicMaterial({
+              color: isCapture ? '#fda4af' : '#7dd3fc',
+              transparent: true,
+              opacity: 0.95,
+            })
+          );
+          orb.userData.pathCurve = { curve, offset: (idx * 0.17) % 1, speed: 0.85 };
+          this.markersGroup.add(orb);
+        }
+      } else if (isCapture) {
         const capPad = new THREE.Mesh(
-          new THREE.PlaneGeometry(0.88, 0.88),
+          this._sharedPadGeo,
           new THREE.MeshBasicMaterial({
             color: '#c95b63',
             transparent: true,
@@ -1140,7 +1312,7 @@ export class Scene3D {
         this.markersGroup.add(capPad);
 
         const capRing = new THREE.Mesh(
-          new THREE.RingGeometry(0.35, 0.43, 32),
+          this._sharedCapRingGeo,
           new THREE.MeshBasicMaterial({
             color: '#c95b63',
             side: THREE.DoubleSide,
@@ -1154,7 +1326,7 @@ export class Scene3D {
         this.markersGroup.add(capRing);
       } else {
         const dot = new THREE.Mesh(
-          new THREE.CircleGeometry(0.14, 24),
+          this._sharedDotGeo,
           new THREE.MeshBasicMaterial({
             color: '#74a88e',
             transparent: true,
@@ -1178,6 +1350,8 @@ export class Scene3D {
       );
       alertRing.rotation.x = -Math.PI / 2;
       alertRing.position.set(x, 0.022, z);
+      alertRing.userData.ownGeo = true;
+      if (this.moveLightGuides) alertRing.userData.pulse = true;
       this.markersGroup.add(alertRing);
     }
 

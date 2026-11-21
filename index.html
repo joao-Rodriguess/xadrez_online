@@ -30,6 +30,7 @@
           <button id="btn-piece-studio" class="btn btn-ghost">Peças 3D</button>
           <button id="btn-online-lobby" class="btn btn-ghost">Multiplayer</button>
           <button id="btn-lighting-toggle" class="btn btn-ghost" title="Alternar iluminação do jogo (Sem Luz / Penumbra / Com Luz)">◐ Luz: Penumbra</button>
+          <button id="btn-music-toggle" class="btn btn-ghost" title="Trocar ou pausar música da partida">♪ Noturno</button>
           <button id="btn-firebase-config" class="btn btn-ghost" title="Preferências e Servidor">Ajustes</button>
           <button id="btn-sound-toggle" class="btn btn-ghost" title="Ativar/Desativar Som">Som</button>
         </nav>
@@ -140,6 +141,14 @@
                 <label for="menu-lighting-select">Iluminação:</label>
                 <select id="menu-lighting-select" class="select-compact"></select>
               </div>
+              <div class="menu-footer-item">
+                <label for="menu-music-select">Música:</label>
+                <select id="menu-music-select" class="select-compact"></select>
+              </div>
+              <label class="toggle-chip" title="Ativar/desativar animações de luz nos destinos possíveis">
+                <input type="checkbox" id="chk-menu-light-guides" checked />
+                <span>Guias de Luz</span>
+              </label>
             </div>
             <div class="menu-footer-item">
               <span class="hint-text">Arraste fora das peças para girar a câmera • Role para dar zoom</span>
@@ -174,7 +183,13 @@
               <select id="board-theme-select" class="select-compact" title="Tema do Tabuleiro 3D"></select>
               <label for="lighting-mode-select" class="sr-only">Iluminação</label>
               <select id="lighting-mode-select" class="select-compact" title="Modo de Iluminação"></select>
+              <label for="music-track-select" class="sr-only">Trilha Musical</label>
+              <select id="music-track-select" class="select-compact" title="Faixa de Música da Partida"></select>
               <button id="btn-threat-map" class="cam-btn" title="Mostrar/ocultar mapa de casas atacadas e defendidas">Ameaças</button>
+              <label class="toggle-chip" title="Ativar/desativar animações de luz nos destinos possíveis">
+                <input type="checkbox" id="chk-light-guides" checked />
+                <span>Guias de Luz</span>
+              </label>
               <label class="toggle-chip" title="Girar câmera automaticamente a cada turno em modo local">
                 <input type="checkbox" id="chk-auto-flip" />
                 <span>Auto-Giro</span>
@@ -573,10 +588,24 @@
                 <select id="settings-lighting-select" class="input"></select>
               </div>
             </div>
+            <div class="form-grid-2">
+              <div class="form-row">
+                <label for="settings-music-select">Faixa de Música (Partida)</label>
+                <select id="settings-music-select" class="input"></select>
+              </div>
+              <div class="form-row">
+                <label for="settings-music-volume">Volume da Música <span id="val-music-volume" class="mono">45%</span></label>
+                <input id="settings-music-volume" type="range" min="0" max="100" step="5" value="45" />
+              </div>
+            </div>
             <div class="settings-toggles">
               <label class="toggle-chip">
                 <input type="checkbox" id="chk-settings-sound" checked />
                 <span>Efeitos Sonoros</span>
+              </label>
+              <label class="toggle-chip">
+                <input type="checkbox" id="chk-settings-light-guides" checked />
+                <span>Animações de Luz nos Destinos</span>
               </label>
               <label class="toggle-chip">
                 <input type="checkbox" id="chk-settings-auto-flip" />

@@ -1422,6 +1422,17 @@ body.theme-dark-nolight .player-card.active-turn {
   letter-spacing: 0.7px;
 }
 
+.settings-section input[type="range"] {
+  width: 100%;
+  accent-color: var(--accent-cyan);
+  cursor: pointer;
+}
+
+.settings-section label span.mono {
+  float: right;
+  color: var(--text-main);
+}
+
 .settings-toggles {
   display: flex;
   flex-direction: row;
