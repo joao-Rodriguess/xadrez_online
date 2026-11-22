@@ -68,11 +68,30 @@ body {
   overscroll-behavior: none;
 }
 
+button,
+select,
+input,
+.menu-card,
+.academy-lesson-card,
+.move-cell {
+  -webkit-tap-highlight-color: transparent;
+}
+
+.btn,
+.cam-btn,
+.menu-card,
+.academy-lesson-card,
+.promo-btn,
+.react-btn {
+  touch-action: manipulation;
+}
+
 #app {
   display: flex;
   flex-direction: column;
   height: 100vh;
   height: 100dvh;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
 .sr-only {
@@ -1840,7 +1859,429 @@ body.theme-dark-nolight .player-card.active-turn {
   gap: 8px;
 }
 
-@media (max-width: 960px) {
+/* ---------- HUD Toggle Button (Mobile Landscape) ---------- */
+.hud-toggle-btn {
+  display: none;
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  z-index: 15;
+  background: var(--bg-glass);
+  border: 1px solid var(--border-glass);
+  color: var(--text-main);
+  padding: 4px 9px;
+  border-radius: 7px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+}
+
+.hud-toggle-btn:hover {
+  border-color: var(--accent-cyan);
+}
+
+/* ---------- Mandatory Mobile Landscape Lock Overlay ---------- */
+.rotate-device-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: #070709;
+  padding: 24px;
+  align-items: center;
+  justify-content: center;
+  touch-action: none;
+}
+
+.rotate-overlay-card {
+  width: min(360px, 100%);
+  background: #121216;
+  border: 1px solid rgba(194, 155, 97, 0.36);
+  border-radius: 14px;
+  padding: 24px 20px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.85);
+}
+
+.rotate-phone-stage {
+  position: relative;
+  width: 86px;
+  height: 86px;
+  display: grid;
+  place-items: center;
+}
+
+.rotate-phone-frame {
+  width: 36px;
+  height: 62px;
+  border: 2px solid var(--accent-cyan);
+  border-radius: 8px;
+  background: #1a191d;
+  display: grid;
+  place-items: center;
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.05);
+  animation: phoneRotateLandscape 2.2s ease-in-out infinite;
+}
+
+.rotate-phone-crown {
+  font-size: 18px;
+  color: var(--accent-cyan);
+}
+
+.rotate-arrow-glyph {
+  position: absolute;
+  bottom: 2px;
+  right: 4px;
+  font-size: 20px;
+  color: var(--text-muted);
+}
+
+@keyframes phoneRotateLandscape {
+  0%, 20% {
+    transform: rotate(0deg);
+  }
+  55%, 85% {
+    transform: rotate(-90deg);
+  }
+  100% {
+    transform: rotate(0deg);
+  }
+}
+
+.rotate-overlay-card h2 {
+  font-family: var(--font-display);
+  font-size: 18px;
+  color: var(--text-main);
+}
+
+.rotate-overlay-desc {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+.rotate-overlay-desc strong {
+  color: var(--accent-cyan);
+}
+
+.rotate-lock-btn {
+  width: 100%;
+  padding: 10px 14px;
+  font-size: 13px;
+}
+
+.rotate-device-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+@media (orientation: portrait) and (hover: none) and (pointer: coarse) and (max-width: 960px) {
+  .rotate-device-overlay {
+    display: flex;
+  }
+  #app {
+    visibility: hidden;
+    pointer-events: none;
+  }
+}
+
+body.force-landscape-block .rotate-device-overlay {
+  display: flex;
+}
+
+body.force-landscape-block #app {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+/* ---------- Mobile Landscape Optimization (Mandatory Mobile Mode) ---------- */
+@media (orientation: landscape) and (max-height: 560px), (hover: none) and (pointer: coarse) and (orientation: landscape) and (max-width: 1024px) {
+  .topbar {
+    height: 38px;
+    min-height: 38px;
+    padding: 0 calc(10px + env(safe-area-inset-right, 0px)) 0 calc(10px + env(safe-area-inset-left, 0px));
+    flex-wrap: nowrap;
+    gap: 8px;
+  }
+  .brand {
+    gap: 6px;
+    flex-shrink: 0;
+  }
+  .brand-crown {
+    font-size: 16px;
+  }
+  .brand h1 {
+    font-size: 11.5px;
+    letter-spacing: 0.9px;
+  }
+  .badge {
+    font-size: 9.5px;
+    padding: 1px 6px;
+  }
+  .top-actions {
+    flex: 1;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    justify-content: flex-end;
+    gap: 4px;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+  .top-actions::-webkit-scrollbar {
+    display: none;
+  }
+  .top-actions .btn {
+    padding: 3px 8px;
+    font-size: 11px;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  .workspace {
+    grid-template-columns: 1fr 246px;
+    grid-template-rows: 1fr;
+    padding-left: env(safe-area-inset-left, 0px);
+    padding-right: env(safe-area-inset-right, 0px);
+  }
+  body.hud-collapsed .workspace {
+    grid-template-columns: 1fr;
+  }
+  body.hud-collapsed .hud-panel {
+    display: none;
+  }
+  .hud-toggle-btn {
+    display: inline-flex;
+    align-items: center;
+  }
+  .eval-bar-container {
+    left: 6px;
+    top: 34px;
+    bottom: 44px;
+    width: 10px;
+  }
+  .turn-banner {
+    top: 6px;
+    font-size: 11px;
+    padding: 3px 10px;
+    max-width: calc(100% - 140px);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .floating-controls {
+    bottom: 5px;
+    max-width: calc(100% - 14px);
+    padding: 3px 6px;
+    gap: 4px;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    justify-content: flex-start;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+  .floating-controls::-webkit-scrollbar {
+    display: none;
+  }
+  .control-group {
+    flex-shrink: 0;
+    gap: 4px;
+  }
+  .cam-btn {
+    padding: 3px 7px;
+    font-size: 10.5px;
+    white-space: nowrap;
+  }
+  .select-compact {
+    padding: 3px 5px;
+    font-size: 10.5px;
+    max-width: 120px;
+  }
+  .toggle-chip {
+    font-size: 10.5px;
+    white-space: nowrap;
+  }
+  .hud-panel {
+    padding: 6px 8px;
+    gap: 5px;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    border-left: 1px solid var(--border-glass);
+    border-top: none;
+  }
+  .player-card {
+    padding: 5px 7px;
+    gap: 6px;
+    border-radius: 8px;
+  }
+  .avatar {
+    width: 24px;
+    height: 24px;
+    font-size: 13px;
+  }
+  .player-name {
+    font-size: 11.5px;
+  }
+  .clock {
+    font-size: 12.5px;
+    padding: 3px 6px;
+  }
+  .lost-row,
+  .captured-row {
+    font-size: 10px;
+    min-height: 12px;
+  }
+  .match-actions {
+    grid-template-columns: repeat(4, 1fr);
+    gap: 4px;
+  }
+  .match-actions .btn-sm {
+    padding: 4px 4px;
+    font-size: 10.5px;
+  }
+  .history-box {
+    min-height: 82px;
+  }
+  .history-header {
+    padding: 4px 7px;
+    font-size: 10.5px;
+  }
+  .opening-name-banner {
+    font-size: 10px;
+    padding: 3px 6px;
+    margin-bottom: 3px;
+  }
+  #eval-chart-canvas {
+    height: 28px;
+  }
+  .move-history-list {
+    padding: 4px 6px;
+    font-size: 11px;
+    gap: 2px 4px;
+  }
+  .academy-panel,
+  .puzzle-banner,
+  .coach-alert-banner,
+  .online-panel {
+    padding: 6px 7px;
+    gap: 5px;
+  }
+  .academy-step-text,
+  .coach-alert-text {
+    font-size: 11px;
+  }
+  .chat-messages {
+    height: 54px;
+  }
+  .main-menu-screen {
+    inset: 38px 0 0 0;
+    padding: 8px calc(12px + env(safe-area-inset-right, 0px)) 8px calc(12px + env(safe-area-inset-left, 0px));
+    align-items: flex-start;
+  }
+  .menu-shell {
+    padding: 10px 14px;
+    gap: 8px;
+    max-width: 100%;
+  }
+  .menu-logo-badge {
+    width: 34px;
+    height: 34px;
+    font-size: 18px;
+  }
+  .menu-title {
+    font-size: 15px;
+  }
+  .menu-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 7px;
+  }
+  .menu-card {
+    padding: 8px 10px;
+    gap: 8px;
+  }
+  .menu-card-icon {
+    width: 30px;
+    height: 30px;
+    font-size: 15px;
+  }
+  .menu-card-body strong {
+    font-size: 12px;
+  }
+  .menu-card-body p {
+    font-size: 10.5px;
+    line-height: 1.25;
+  }
+  .modal {
+    padding: 6px 10px;
+  }
+  .modal-card {
+    max-height: 95dvh;
+  }
+  .modal-header {
+    padding: 8px 12px;
+  }
+  .modal-body {
+    padding: 10px 12px;
+    gap: 8px;
+  }
+  .modal-footer {
+    padding: 8px 12px;
+  }
+  .studio-layout {
+    grid-template-columns: 185px 1fr;
+    gap: 10px;
+    padding: 10px 12px;
+  }
+  #studio-preview-canvas {
+    width: 170px;
+    height: 170px;
+  }
+  .academy-lessons-list,
+  .academy-encyclopedia-view {
+    grid-template-columns: repeat(2, 1fr);
+    max-height: 58dvh;
+  }
+  .gameover-card {
+    padding: 12px 14px;
+    width: min(340px, 86%);
+    gap: 6px;
+  }
+  .gameover-crown {
+    font-size: 24px;
+  }
+  .gameover-actions {
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 6px;
+  }
+  .challenge-banner {
+    bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+    right: calc(10px + env(safe-area-inset-right, 0px));
+    padding: 9px 11px;
+  }
+}
+
+@media (orientation: landscape) and (max-width: 740px) and (max-height: 560px) {
+  .workspace {
+    grid-template-columns: 1fr 216px;
+  }
+  .brand h1 {
+    display: none;
+  }
+}
+
+@media (orientation: landscape) and (min-width: 780px) and (max-height: 560px) {
+  .menu-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+@media (max-width: 960px) and (orientation: portrait) {
   .topbar {
     height: auto;
     min-height: 50px;

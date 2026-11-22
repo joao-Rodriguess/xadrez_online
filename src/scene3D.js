@@ -276,9 +276,10 @@ export class Scene3D {
     this.camera = new THREE.PerspectiveCamera(42, w / h, 0.1, 100);
     this.camera.position.set(0, 8.2, 8.2);
 
+    this.isCoarsePointer = Boolean(window.matchMedia?.('(pointer: coarse)').matches);
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
     this.renderer.setSize(w, h);
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, this.isCoarsePointer ? 1.5 : 2));
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -360,6 +361,7 @@ export class Scene3D {
     this.moveLightGuides = true;
     this._lastHighlightOpts = null;
     this.dragState = null;
+    this._activeTouchPointers = new Set();
     this.dragPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -0.58);
     this.dragIntersect = new THREE.Vector3();
     this.dragFloorRing = null;
@@ -384,8 +386,9 @@ export class Scene3D {
     this.dirLight = new THREE.DirectionalLight('#fff6e5', 1.32);
     this.dirLight.position.set(6, 12, 7);
     this.dirLight.castShadow = true;
-    this.dirLight.shadow.mapSize.width = 2048;
-    this.dirLight.shadow.mapSize.height = 2048;
+    const shadowRes = this.isCoarsePointer ? 1024 : 2048;
+    this.dirLight.shadow.mapSize.width = shadowRes;
+    this.dirLight.shadow.mapSize.height = shadowRes;
     this.dirLight.shadow.camera.near = 2;
     this.dirLight.shadow.camera.far = 28;
     const d = 6;
@@ -639,104 +642,11 @@ export class Scene3D {
   _bindEvents() {
     const dom = this.renderer.domElement;
 
-    dom.addEventListener('pointerdown', (e) => {
-      if (e.button !== undefined && e.button !== 0 && e.pointerType === 'mouse') return;
-      this._pointerDownPos = { x: e.clientX, y: e.clientY };
-
-      const sq = this._getSquareFromPointerEvent(e);
-      if (sq && this.canDragSquare(sq) && this.pieceMeshes.has(sq)) {
-        const wasSelected = this.selectedSquare === sq;
-        if (!wasSelected && this.onPieceSelect) {
-          this.onPieceSelect(sq);
-        }
-        const group = this.pieceMeshes.get(sq);
-        if (group) {
-          this.dragState = {
-            fromSquare: sq,
-            wasSelected,
-            group,
-            hasMoved: false,
-            pointerId: e.pointerId,
-            targetX: group.position.x,
-            targetZ: group.position.z,
-            hoverSquare: sq,
-            sparkAcc: 0,
-          };
-          this.controls.enabled = false;
-          try {
-            dom.setPointerCapture(e.pointerId);
-          } catch {
-            // ignore capture errors
-          }
-          dom.style.cursor = 'grabbing';
-        }
-      }
-    });
-
-    dom.addEventListener('pointermove', (e) => {
-      if (this.dragState) {
-        const dx = e.clientX - this._pointerDownPos.x;
-        const dy = e.clientY - this._pointerDownPos.y;
-        if (Math.hypot(dx, dy) > 7) {
-          this.dragState.hasMoved = true;
-        }
-
-        this._updatePointerRay(e);
-        if (this.raycaster.ray.intersectPlane(this.dragPlane, this.dragIntersect)) {
-          const clampedX = Math.max(-4.35, Math.min(4.35, this.dragIntersect.x));
-          const clampedZ = Math.max(-4.35, Math.min(4.35, this.dragIntersect.z));
-          const hoverSq = coordsToSquare(clampedX, clampedZ);
-          const isLegal = Boolean(hoverSq && this.legalMoveTargets.has(hoverSq));
-
-          if (isLegal) {
-            const dest = squareToCoords(hoverSq);
-            // Gentle magnetic snap pull toward legal square center
-            this.dragState.targetX = THREE.MathUtils.lerp(clampedX, dest.x, 0.36);
-            this.dragState.targetZ = THREE.MathUtils.lerp(clampedZ, dest.z, 0.36);
-            if (hoverSq !== this.hoveredTargetSquare) {
-              this.hoveredTargetSquare = hoverSq;
-              this._renderGhostPreview(hoverSq);
-            }
-          } else {
-            this.dragState.targetX = clampedX;
-            this.dragState.targetZ = clampedZ;
-            if (this.hoveredTargetSquare) {
-              this.hoveredTargetSquare = null;
-              this._clearGhostPreview();
-            }
-          }
-          this.dragState.hoverSquare = hoverSq;
-          this._updateDragFloorRing(this.dragState.targetX, this.dragState.targetZ, isLegal);
-        }
-        return;
-      }
-
-      if (!this.selectedSquare || this.legalMoveTargets.size === 0) {
-        if (this.hoveredTargetSquare) {
-          this.hoveredTargetSquare = null;
-          this._clearGhostPreview();
-        }
-        dom.style.cursor = 'default';
-        return;
-      }
-
-      const sq = this._getSquareFromPointerEvent(e);
-      if (sq && this.legalMoveTargets.has(sq)) {
-        dom.style.cursor = 'pointer';
-        if (sq !== this.hoveredTargetSquare) {
-          this.hoveredTargetSquare = sq;
-          this._renderGhostPreview(sq);
-        }
-      } else {
-        dom.style.cursor = sq ? 'pointer' : 'default';
-        if (this.hoveredTargetSquare) {
-          this.hoveredTargetSquare = null;
-          this._clearGhostPreview();
-        }
-      }
-    });
-
     const finishDragOrClick = (e, cancelled = false) => {
+      if (e?.pointerType === 'touch') {
+        this._activeTouchPointers.delete(e.pointerId);
+      }
+
       if (this.dragState) {
         const drag = this.dragState;
         this.dragState = null;
@@ -782,7 +692,8 @@ export class Scene3D {
       if (cancelled) return;
       const dx = e.clientX - this._pointerDownPos.x;
       const dy = e.clientY - this._pointerDownPos.y;
-      if (Math.hypot(dx, dy) > 8) return; // Was dragging camera
+      const tapThreshold = e.pointerType === 'touch' ? 14 : 8;
+      if (Math.hypot(dx, dy) > tapThreshold) return; // Was dragging camera
 
       const sq = this._getSquareFromPointerEvent(e);
       if (sq && this.onSquareClick) {
@@ -790,10 +701,128 @@ export class Scene3D {
       }
     };
 
+    dom.addEventListener('pointerdown', (e) => {
+      if (e.button !== undefined && e.button !== 0 && e.pointerType === 'mouse') return;
+
+      if (e.pointerType === 'touch') {
+        this._activeTouchPointers.add(e.pointerId);
+        if (this._activeTouchPointers.size > 1) {
+          if (this.dragState) finishDragOrClick(e, true);
+          this.controls.enabled = true;
+          return;
+        }
+      }
+
+      this._pointerDownPos = { x: e.clientX, y: e.clientY };
+
+      const sq = this._getSquareFromPointerEvent(e);
+      if (sq && this.canDragSquare(sq) && this.pieceMeshes.has(sq)) {
+        const wasSelected = this.selectedSquare === sq;
+        if (!wasSelected && this.onPieceSelect) {
+          this.onPieceSelect(sq);
+        }
+        const group = this.pieceMeshes.get(sq);
+        if (group) {
+          this.dragState = {
+            fromSquare: sq,
+            wasSelected,
+            group,
+            hasMoved: false,
+            pointerId: e.pointerId,
+            pointerType: e.pointerType,
+            targetX: group.position.x,
+            targetZ: group.position.z,
+            hoverSquare: sq,
+            sparkAcc: 0,
+          };
+          this.controls.enabled = false;
+          try {
+            dom.setPointerCapture(e.pointerId);
+          } catch {
+            // ignore capture errors
+          }
+          dom.style.cursor = 'grabbing';
+        }
+      }
+    });
+
+    dom.addEventListener('pointermove', (e) => {
+      if (this.dragState) {
+        const drag = this.dragState;
+        const dx = e.clientX - this._pointerDownPos.x;
+        const dy = e.clientY - this._pointerDownPos.y;
+        const dragThreshold = drag.pointerType === 'touch' || e.pointerType === 'touch' ? 12 : 7;
+        if (Math.hypot(dx, dy) > dragThreshold) {
+          drag.hasMoved = true;
+        }
+
+        this._updatePointerRay(e);
+        if (this.raycaster.ray.intersectPlane(this.dragPlane, this.dragIntersect)) {
+          const clampedX = Math.max(-4.35, Math.min(4.35, this.dragIntersect.x));
+          const clampedZ = Math.max(-4.35, Math.min(4.35, this.dragIntersect.z));
+          const hoverSq = coordsToSquare(clampedX, clampedZ);
+          const isLegal = Boolean(hoverSq && this.legalMoveTargets.has(hoverSq));
+
+          if (isLegal) {
+            const dest = squareToCoords(hoverSq);
+            const snapLerp = drag.pointerType === 'touch' || e.pointerType === 'touch' ? 0.42 : 0.36;
+            // Gentle magnetic snap pull toward legal square center
+            drag.targetX = THREE.MathUtils.lerp(clampedX, dest.x, snapLerp);
+            drag.targetZ = THREE.MathUtils.lerp(clampedZ, dest.z, snapLerp);
+            if (hoverSq !== this.hoveredTargetSquare) {
+              this.hoveredTargetSquare = hoverSq;
+              this._renderGhostPreview(hoverSq);
+            }
+          } else {
+            drag.targetX = clampedX;
+            drag.targetZ = clampedZ;
+            if (this.hoveredTargetSquare) {
+              this.hoveredTargetSquare = null;
+              this._clearGhostPreview();
+            }
+          }
+          drag.hoverSquare = hoverSq;
+          this._updateDragFloorRing(drag.targetX, drag.targetZ, isLegal);
+        }
+        return;
+      }
+
+      if (!this.selectedSquare || this.legalMoveTargets.size === 0) {
+        if (this.hoveredTargetSquare) {
+          this.hoveredTargetSquare = null;
+          this._clearGhostPreview();
+        }
+        dom.style.cursor = 'default';
+        return;
+      }
+
+      const sq = this._getSquareFromPointerEvent(e);
+      if (sq && this.legalMoveTargets.has(sq)) {
+        dom.style.cursor = 'pointer';
+        if (sq !== this.hoveredTargetSquare) {
+          this.hoveredTargetSquare = sq;
+          this._renderGhostPreview(sq);
+        }
+      } else {
+        dom.style.cursor = sq ? 'pointer' : 'default';
+        if (this.hoveredTargetSquare) {
+          this.hoveredTargetSquare = null;
+          this._clearGhostPreview();
+        }
+      }
+    });
+
     dom.addEventListener('pointerup', (e) => finishDragOrClick(e, false));
     dom.addEventListener('pointercancel', (e) => finishDragOrClick(e, true));
 
+    const onViewportResize = () => {
+      this.resize();
+      setTimeout(() => this.resize(), 220);
+      setTimeout(() => this.resize(), 450);
+    };
     window.addEventListener('resize', () => this.resize());
+    window.addEventListener('orientationchange', onViewportResize);
+    window.visualViewport?.addEventListener('resize', () => this.resize());
   }
 
   _clearGhostPreview() {
@@ -888,6 +917,9 @@ export class Scene3D {
     const aspect = w / Math.max(1, h);
     if (aspect < 1.0) {
       return Math.min(2.05, Math.max(1.0, 1.12 / Math.max(0.48, aspect)));
+    }
+    if (h <= 480) {
+      return aspect > 2.0 ? 1.15 : 1.08;
     }
     return 1.0;
   }

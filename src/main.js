@@ -95,6 +95,8 @@ class ChessRoyaleApp {
     this.lastClockTick = Date.now();
     this.gameEnded = false;
     this.isInMenu = true;
+    this.isOrientationBlocked = false;
+    this.isHudCollapsed = false;
     this.hasActiveMatch = false;
     this.moveSnapshots = [];
     this.historyPreviewPly = null;
@@ -712,6 +714,7 @@ class ChessRoyaleApp {
 
     this._initPieceStudioEvents();
     this._initOnlineAndFirebaseEvents();
+    this._initMobileExperience();
     this._updateConnectionBadge();
   }
 
@@ -1338,7 +1341,7 @@ class ChessRoyaleApp {
   }
 
   _isTurnInteractive() {
-    if (this.isInMenu || this.gameEnded || this.isBotThinking || this.pendingPromo) return false;
+    if (this.isOrientationBlocked || this.isInMenu || this.gameEnded || this.isBotThinking || this.pendingPromo) return false;
     if (this.gameMode === 'bot_vs_bot') return false;
     if (this.gameMode === 'bot' && this.chess.turn() !== this.humanColor) return false;
     if (this.gameMode === 'online') {
@@ -1735,7 +1738,7 @@ class ChessRoyaleApp {
         this._updatePresenceUI(this._onlineRoomSnapshot, approxServerTime);
       }
 
-      if (this.isInMenu || !this.hasActiveMatch || this.gameEnded || this.timeControl.initialSeconds <= 0) return;
+      if (this.isOrientationBlocked || this.isInMenu || !this.hasActiveMatch || this.gameEnded || this.timeControl.initialSeconds <= 0) return;
       if (this.gameMode === 'online' && this._onlineRoomSnapshot?.status !== 'playing') return;
 
       const turn = this.chess.turn();
@@ -3048,6 +3051,114 @@ class ChessRoyaleApp {
       });
       friendsListEl.appendChild(row);
     });
+  }
+
+  // ---------- Mobile Mandatory Landscape & Touch Fullscreen UX ----------
+  _initMobileExperience() {
+    const lockBtn = document.getElementById('btn-lock-landscape-fullscreen');
+    const fsBtn = document.getElementById('btn-fullscreen-toggle');
+    const hudToggleBtn = document.getElementById('btn-toggle-hud');
+
+    lockBtn?.addEventListener('click', () => this._enterLandscapeFullscreen());
+    fsBtn?.addEventListener('click', () => this._toggleFullscreen());
+
+    hudToggleBtn?.addEventListener('click', () => {
+      this.isHudCollapsed = !this.isHudCollapsed;
+      document.body.classList.toggle('hud-collapsed', this.isHudCollapsed);
+      hudToggleBtn.textContent = this.isHudCollapsed ? '◂ Painel' : 'Painel ▸';
+      this.scene3d.resize();
+      setTimeout(() => this.scene3d.resize(), 120);
+    });
+
+    const updateFsLabel = () => {
+      const isFs = Boolean(document.fullscreenElement || document.webkitFullscreenElement);
+      if (fsBtn) {
+        fsBtn.textContent = isFs ? '✕ Sair Tela Cheia' : '⛶ Tela Cheia';
+      }
+      this.scene3d.resize();
+      setTimeout(() => this.scene3d.resize(), 180);
+    };
+
+    document.addEventListener('fullscreenchange', updateFsLabel);
+    document.addEventListener('webkitfullscreenchange', updateFsLabel);
+
+    const onViewportChange = () => this._updateOrientationLock();
+    window.addEventListener('resize', onViewportChange);
+    window.addEventListener('orientationchange', () => {
+      setTimeout(onViewportChange, 150);
+      setTimeout(onViewportChange, 380);
+    });
+    window.visualViewport?.addEventListener('resize', onViewportChange);
+    if (screen.orientation?.addEventListener) {
+      screen.orientation.addEventListener('change', onViewportChange);
+    }
+
+    this._updateOrientationLock();
+  }
+
+  _updateOrientationLock() {
+    const isCoarse = Boolean(window.matchMedia?.('(pointer: coarse)').matches);
+    const isMobileUa = /Android|iPhone|iPod|Windows Phone|Mobile/i.test(navigator.userAgent || '');
+    const isPhoneSize = Math.min(window.innerWidth, window.innerHeight) <= 760;
+    const isPortrait = window.innerHeight > window.innerWidth;
+    const blocked = (isCoarse || isMobileUa) && isPhoneSize && isPortrait;
+
+    const wasBlocked = this.isOrientationBlocked;
+    this.isOrientationBlocked = blocked;
+    document.body.classList.toggle('force-landscape-block', blocked);
+
+    if (wasBlocked && !blocked) {
+      this.lastClockTick = Date.now();
+      this.scene3d.resize();
+      setTimeout(() => this.scene3d.resize(), 220);
+      setTimeout(() => this.scene3d.resize(), 450);
+    }
+  }
+
+  async _enterLandscapeFullscreen() {
+    const hintEl = document.getElementById('rotate-device-hint');
+    try {
+      const root = document.documentElement;
+      if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+        if (root.requestFullscreen) {
+          await root.requestFullscreen({ navigationUI: 'hide' });
+        } else if (root.webkitRequestFullscreen) {
+          await root.webkitRequestFullscreen();
+        }
+      }
+    } catch {
+      // ignore fullscreen rejection
+    }
+
+    try {
+      if (screen.orientation?.lock) {
+        await screen.orientation.lock('landscape');
+        this._updateOrientationLock();
+        return;
+      }
+    } catch {
+      // iOS / browsers that block programmatic lock require manual device rotation
+    }
+
+    if (hintEl) {
+      hintEl.textContent =
+        'No iPhone/iOS ou caso não gire automaticamente, desbloqueie a rotação da tela no aparelho e vire-o de lado.';
+    }
+    this._updateOrientationLock();
+  }
+
+  async _toggleFullscreen() {
+    const isFs = Boolean(document.fullscreenElement || document.webkitFullscreenElement);
+    try {
+      if (isFs) {
+        if (document.exitFullscreen) await document.exitFullscreen();
+        else if (document.webkitExitFullscreen) await document.webkitExitFullscreen();
+      } else {
+        await this._enterLandscapeFullscreen();
+      }
+    } catch {
+      this._toast('Use o botão de rotação do celular ou adicione à Tela Inicial.');
+    }
   }
 
   _toast(message) {

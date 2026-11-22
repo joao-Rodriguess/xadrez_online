@@ -1,0 +1,10 @@
+{
+  "name": "Chess 3D Royale",
+  "short_name": "Chess 3D",
+  "description": "Xadrez 3D interativo, Academia de Estudos, IA Omega e Salas Privadas Online.",
+  "start_url": "/",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#09090b",
+  "theme_color": "#09090b"
+}
