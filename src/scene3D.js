@@ -296,6 +296,7 @@ export class Scene3D {
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
     this.controls.enableDamping = true;
     this.controls.dampingFactor = 0.07;
+    this.controls.enablePan = false;
     this.controls.maxPolarAngle = Math.PI * 0.47;
     this.controls.minPolarAngle = 0.15;
     this.controls.minDistance = 5.5;
@@ -308,6 +309,7 @@ export class Scene3D {
     this.boardGroup = new THREE.Group();
     this.piecesGroup = new THREE.Group();
     this.markersGroup = new THREE.Group();
+    this.userAnnotationsGroup = new THREE.Group();
     this.ghostGroup = new THREE.Group();
     this.particlesGroup = new THREE.Group();
     this.effectsGroup = new THREE.Group();
@@ -316,11 +318,16 @@ export class Scene3D {
       this.boardGroup,
       this.piecesGroup,
       this.markersGroup,
+      this.userAnnotationsGroup,
       this.ghostGroup,
       this.particlesGroup,
       this.effectsGroup,
       this.ambientGroup
     );
+
+    this.userArrows = [];
+    this.userCircles = new Set();
+    this._rightDragStartSq = null;
 
     this.squareMeshes = new Map();
     this.pieceMeshes = new Map(); // square -> THREE.Group
@@ -701,8 +708,19 @@ export class Scene3D {
       }
     };
 
+    dom.addEventListener('contextmenu', (e) => e.preventDefault());
+
     dom.addEventListener('pointerdown', (e) => {
+      if (e.button === 2) {
+        this._rightDragStartSq = this._getSquareFromPointerEvent(e);
+        this.controls.enabled = false;
+        return;
+      }
       if (e.button !== undefined && e.button !== 0 && e.pointerType === 'mouse') return;
+
+      if (this.userArrows.length > 0 || this.userCircles.size > 0) {
+        this.clearUserAnnotations();
+      }
 
       if (e.pointerType === 'touch') {
         this._activeTouchPointers.add(e.pointerId);
@@ -812,8 +830,34 @@ export class Scene3D {
       }
     });
 
-    dom.addEventListener('pointerup', (e) => finishDragOrClick(e, false));
-    dom.addEventListener('pointercancel', (e) => finishDragOrClick(e, true));
+    dom.addEventListener('pointerup', (e) => {
+      if (e.button === 2) {
+        this.controls.enabled = true;
+        const endSq = this._getSquareFromPointerEvent(e);
+        const startSq = this._rightDragStartSq;
+        this._rightDragStartSq = null;
+        if (startSq && endSq) {
+          if (startSq === endSq) {
+            if (this.userCircles.has(endSq)) this.userCircles.delete(endSq);
+            else this.userCircles.add(endSq);
+          } else {
+            const idx = this.userArrows.findIndex((a) => a.from === startSq && a.to === endSq);
+            if (idx >= 0) this.userArrows.splice(idx, 1);
+            else this.userArrows.push({ from: startSq, to: endSq });
+          }
+          this._renderUserAnnotations();
+        }
+        return;
+      }
+      finishDragOrClick(e, false);
+    });
+    dom.addEventListener('pointercancel', (e) => {
+      if (this._rightDragStartSq) {
+        this._rightDragStartSq = null;
+        this.controls.enabled = true;
+      }
+      finishDragOrClick(e, true);
+    });
 
     const onViewportResize = () => {
       this.resize();
@@ -1077,12 +1121,92 @@ export class Scene3D {
     }
   }
 
+  _createFlatArrowMesh(fromSq, toSq, colorHex = '#c29b61', opacity = 0.82) {
+    const fromC = squareToCoords(fromSq);
+    const toC = squareToCoords(toSq);
+    const dx = toC.x - fromC.x;
+    const dz = toC.z - fromC.z;
+    const len = Math.hypot(dx, dz);
+    if (len < 0.1) return null;
+
+    const shaftW = 0.11;
+    const headW = 0.27;
+    const headLen = Math.min(0.36, len * 0.42);
+    const bodyLen = Math.max(0.05, len - headLen);
+
+    const shape = new THREE.Shape();
+    shape.moveTo(-shaftW / 2, 0.16);
+    shape.lineTo(-shaftW / 2, bodyLen);
+    shape.lineTo(-headW / 2, bodyLen);
+    shape.lineTo(0, len - 0.1);
+    shape.lineTo(headW / 2, bodyLen);
+    shape.lineTo(shaftW / 2, bodyLen);
+    shape.lineTo(shaftW / 2, 0.16);
+    shape.closePath();
+
+    const geo = new THREE.ShapeGeometry(shape);
+    const mat = new THREE.MeshBasicMaterial({
+      color: colorHex,
+      side: THREE.DoubleSide,
+      transparent: true,
+      opacity,
+      depthWrite: false,
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.rotation.order = 'YXZ';
+    mesh.rotation.x = -Math.PI / 2;
+    mesh.rotation.y = Math.atan2(dx, -dz);
+    mesh.position.set(fromC.x, 0.032, fromC.z);
+    mesh.userData.ownGeo = true;
+    return mesh;
+  }
+
+  clearUserAnnotations() {
+    this.userArrows = [];
+    this.userCircles.clear();
+    this._renderUserAnnotations();
+  }
+
+  _renderUserAnnotations() {
+    while (this.userAnnotationsGroup.children.length > 0) {
+      const m = this.userAnnotationsGroup.children[0];
+      this.userAnnotationsGroup.remove(m);
+      if (m.userData?.ownGeo) m.geometry?.dispose();
+      if (m.material && !Array.isArray(m.material)) m.material.dispose();
+    }
+
+    for (const sq of this.userCircles) {
+      const { x, z } = squareToCoords(sq);
+      const ring = new THREE.Mesh(
+        new THREE.RingGeometry(0.36, 0.45, 32),
+        new THREE.MeshBasicMaterial({
+          color: '#d89b48',
+          side: THREE.DoubleSide,
+          transparent: true,
+          opacity: 0.85,
+          depthWrite: false,
+        })
+      );
+      ring.rotation.x = -Math.PI / 2;
+      ring.position.set(x, 0.028, z);
+      ring.userData.ownGeo = true;
+      this.userAnnotationsGroup.add(ring);
+    }
+
+    for (const arr of this.userArrows) {
+      const mesh = this._createFlatArrowMesh(arr.from, arr.to, '#d89b48', 0.78);
+      if (mesh) this.userAnnotationsGroup.add(mesh);
+    }
+  }
+
   updateHighlights({
     selectedSquare,
     legalMoves = [],
     lastMove = null,
     checkSquare = null,
     hintMove = null,
+    premove = null,
+    premoveSelectedSquare = null,
     kothMode = false,
     threatMap = null,
   }) {
@@ -1092,6 +1216,8 @@ export class Scene3D {
       lastMove,
       checkSquare,
       hintMove,
+      premove,
+      premoveSelectedSquare,
       kothMode,
       threatMap,
     };
@@ -1130,6 +1256,10 @@ export class Scene3D {
       if (hintMove && (sq === hintMove.from || sq === hintMove.to)) {
         mesh.material.emissive.set('#6fa889');
         mesh.material.emissiveIntensity = 0.26;
+      }
+      if (sq === premoveSelectedSquare || (premove && (sq === premove.from || sq === premove.to))) {
+        mesh.material.emissive.set('#3b82f6');
+        mesh.material.emissiveIntensity = 0.28;
       }
       if (threatMap && threatMap[sq]) {
         const tm = threatMap[sq];
@@ -1387,23 +1517,16 @@ export class Scene3D {
       this.markersGroup.add(alertRing);
     }
 
-    // AI Hint arrow
+    // Pre-move flat arrow (blue)
+    if (premove && premove.from && premove.to) {
+      const pmArrow = this._createFlatArrowMesh(premove.from, premove.to, '#60a5fa', 0.72);
+      if (pmArrow) this.markersGroup.add(pmArrow);
+    }
+
+    // AI Hint flat arrow (emerald)
     if (hintMove) {
-      const fromC = squareToCoords(hintMove.from);
-      const toC = squareToCoords(hintMove.to);
-      const dir = new THREE.Vector3(toC.x - fromC.x, 0, toC.z - fromC.z);
-      const len = dir.length();
-      if (len > 0.01) {
-        const arrow = new THREE.ArrowHelper(
-          dir.clone().normalize(),
-          new THREE.Vector3(fromC.x, 0.24, fromC.z),
-          len,
-          0x6fa889,
-          0.38,
-          0.22
-        );
-        this.markersGroup.add(arrow);
-      }
+      const hintArrow = this._createFlatArrowMesh(hintMove.from, hintMove.to, '#6fa889', 0.86);
+      if (hintArrow) this.markersGroup.add(hintArrow);
     }
   }
 

@@ -41,6 +41,15 @@ import {
 } from './learningBase.js';
 import { MultiplayerManager } from './firebaseMultiplayer.js';
 import { audioFX, MUSIC_TRACKS } from './audioFX.js';
+import {
+  ACHIEVEMENTS,
+  getRankFromElo,
+  loadPlayerStats,
+  recordCompletedMatch,
+  recordPuzzleSolved,
+  syncAcademyAchievements,
+  resetPlayerStats,
+} from './playerStats.js';
 
 const CUSTOMIZATION_STORAGE_KEY = 'chess3d_piece_customization_v1';
 const MATCH_SNAPSHOTS_KEY = 'chess3d_match_snapshots_v1';
@@ -75,6 +84,12 @@ class ChessRoyaleApp {
     this.coachMode = this._loadSavedCoachMode();
     this.lastCoachMistake = null;
     this.humanMoveQualities = [];
+    this.playerStats = loadPlayerStats();
+    this.profileTab = 'history';
+    this.premove = null;
+    this.premoveSelectedSquare = null;
+    this._matchRecorded = false;
+    this._confirmResetArmed = false;
     this.socialData = { friends: [], friendRequests: [], incomingChallenges: [], acceptedChallenges: [] };
     this.activeIncomingChallenge = null;
     this._handledAcceptedChallenges = new Set();
@@ -121,6 +136,7 @@ class ChessRoyaleApp {
     this._resetSnapshots();
     this._initScene();
     this._initUI();
+    this._updateProfileButtonBadge();
     this._applyLightingMode(this.lightingMode, false);
     this._applyMusicVolume(this.musicVolume, false);
     this._applyMusicTrack(this.musicTrack, false);
@@ -531,6 +547,7 @@ class ChessRoyaleApp {
     document.getElementById('btn-new-game').addEventListener('click', () => this._openNewGameModal());
     document.getElementById('btn-open-academy').addEventListener('click', () => this._openAcademyModal());
     document.getElementById('btn-open-friends').addEventListener('click', () => this._openFriendsModal());
+    document.getElementById('btn-open-profile')?.addEventListener('click', () => this._openProfileModal());
     document.getElementById('btn-piece-studio').addEventListener('click', () => this._openPieceStudio());
     document.getElementById('btn-online-lobby').addEventListener('click', () => this._openOnlineLobby());
     document.getElementById('btn-firebase-config').addEventListener('click', () => this._openFirebaseModal());
@@ -553,6 +570,10 @@ class ChessRoyaleApp {
           this._startPuzzleMode(this.puzzleIndex);
         } else if (act === 'studio') {
           this._openPieceStudio();
+        } else if (act === 'profile') {
+          this._openProfileModal();
+        } else if (act === 'import') {
+          this._openModal('modal-import-position');
         } else if (act === 'settings') {
           this._openFirebaseModal();
         }
@@ -620,11 +641,66 @@ class ChessRoyaleApp {
         this._startLocalOrBotGame(this.lastGameConfig);
       }
     });
+    document.getElementById('btn-gameover-review')?.addEventListener('click', () => {
+      this._hideGameOver();
+      if (this.moveSnapshots.length > 0) {
+        this._previewHistoryPly(this.moveSnapshots.length - 1);
+      }
+    });
     document.getElementById('btn-gameover-studio').addEventListener('click', () => this._openPieceStudio());
     document.getElementById('btn-gameover-menu').addEventListener('click', () => {
       this._hideGameOver();
       this._showMainMenu();
     });
+
+    // History step controls (First / Prev / Next / Last)
+    document.getElementById('btn-hist-first')?.addEventListener('click', () => this._stepHistoryPreview('first'));
+    document.getElementById('btn-hist-prev')?.addEventListener('click', () => this._stepHistoryPreview('prev'));
+    document.getElementById('btn-hist-next')?.addEventListener('click', () => this._stepHistoryPreview('next'));
+    document.getElementById('btn-hist-last')?.addEventListener('click', () => this._stepHistoryPreview('last'));
+
+    // Profile Modal tabs & reset button
+    document.getElementById('btn-profile-tab-history')?.addEventListener('click', () => {
+      this.profileTab = 'history';
+      this._renderProfileModal();
+    });
+    document.getElementById('btn-profile-tab-achievements')?.addEventListener('click', () => {
+      this.profileTab = 'achievements';
+      this._renderProfileModal();
+    });
+    document.getElementById('btn-reset-stats')?.addEventListener('click', () => {
+      const btn = document.getElementById('btn-reset-stats');
+      if (!this._confirmResetArmed) {
+        this._confirmResetArmed = true;
+        if (btn) btn.textContent = 'Confirmar Zerar Tudo?';
+        setTimeout(() => {
+          this._confirmResetArmed = false;
+          if (btn) btn.textContent = 'Zerar Estatísticas';
+        }, 4000);
+        return;
+      }
+      this._confirmResetArmed = false;
+      if (btn) btn.textContent = 'Zerar Estatísticas';
+      this.playerStats = resetPlayerStats();
+      this._updateProfileButtonBadge();
+      this._renderProfileModal();
+      this._toast('Estatísticas zeradas para o padrão inicial (ELO 1000).');
+    });
+
+    // Import FEN / PGN Modal controls
+    const IMPORT_PRESETS = {
+      sicilian: 'rnbqkb1r/1p2pppp/p2p1n2/8/3NP3/2N5/PPP2PPP/R1BQKB1R w KQkq - 0 6',
+      lucena: '3K4/3P1k2/8/8/8/8/4R3/2r5 w - - 0 1',
+      immortal:
+        '1. e4 e5 2. f4 exf4 3. Bc4 Qh4+ 4. Kf1 b5 5. Bxb5 Nf6 6. Nf3 Qh6 7. d3 Nh5 8. Nh4 Qg5 9. Nf5 c6 10. g4 Nf6 11. Rg1 cxb5 12. h4 Qg6 13. h5 Qg5 14. Qf3 Ng8 15. Bxf4 Qf6 16. Nc3 Bc5 17. Nd5 Qxb2 18. Bd6 Bxg1 19. e5 Qxa1+ 20. Ke2 Na6 21. Nxg7+ Kd8 22. Qf6+ Nxf6 23. Be7#',
+    };
+    document.querySelectorAll('[data-import-preset]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const inp = document.getElementById('import-fen-pgn-input');
+        if (inp) inp.value = IMPORT_PRESETS[btn.dataset.importPreset] || '';
+      });
+    });
+    document.getElementById('btn-load-fen-pgn')?.addEventListener('click', () => this._importFenOrPgn());
 
     // Match controls & History restart controls
     document.getElementById('btn-hint').addEventListener('click', () => this._requestHint());
@@ -715,6 +791,7 @@ class ChessRoyaleApp {
     this._initPieceStudioEvents();
     this._initOnlineAndFirebaseEvents();
     this._initMobileExperience();
+    this._initKeyboardShortcuts();
     this._updateConnectionBadge();
   }
 
@@ -1086,6 +1163,12 @@ class ChessRoyaleApp {
     this.currentLesson = null;
     this.lastCoachMistake = null;
     this.humanMoveQualities = [];
+    this.playerStats = loadPlayerStats();
+    this.profileTab = 'history';
+    this.premove = null;
+    this.premoveSelectedSquare = null;
+    this._matchRecorded = false;
+    this._confirmResetArmed = false;
     this.humanColor = myColor === 'b' ? 'b' : 'w';
     this.selectedSquare = null;
     this.legalMoves = [];
@@ -1168,6 +1251,7 @@ class ChessRoyaleApp {
       this.selectedSquare = null;
       this.legalMoves = [];
       this.hintMove = null;
+      this.premoveSelectedSquare = null;
       this.historyPreviewPly = null;
 
       let onlineMoveAnim = null;
@@ -1225,11 +1309,14 @@ class ChessRoyaleApp {
 
     if (room.status === 'finished' && !this.gameEnded) {
       this.gameEnded = true;
+      this.premove = null;
+      this.premoveSelectedSquare = null;
       audioFX.playGameOver(room.result?.winner === this.multiplayer.myColor);
       const winText =
         room.result?.winner === 'draw'
           ? 'Empate!'
           : `${room.result?.winner === 'w' ? 'Brancas' : 'Pretas'} Venceram!`;
+      this._recordMatchOutcome(room.result?.winner || 'draw', room.result?.reason || 'Partida encerrada');
       this._showGameOver(winText, room.result?.reason || 'Partida encerrada');
     } else if (room.status === 'playing') {
       this.gameEnded = false;
@@ -1249,6 +1336,9 @@ class ChessRoyaleApp {
     chatBox.scrollTop = chatBox.scrollHeight;
 
     this._renderAll();
+    if (room.status === 'playing' && !this.gameEnded && this.chess.turn() === this.multiplayer.myColor) {
+      this._tryExecutePremove();
+    }
   }
 
   _escapeHtml(str) {
@@ -1293,6 +1383,12 @@ class ChessRoyaleApp {
     this.currentLesson = null;
     this.lastCoachMistake = null;
     this.humanMoveQualities = [];
+    this.playerStats = loadPlayerStats();
+    this.profileTab = 'history';
+    this.premove = null;
+    this.premoveSelectedSquare = null;
+    this._matchRecorded = false;
+    this._confirmResetArmed = false;
     this.botLevel = botLevel || 3;
     this.humanColor = humanColor || 'w';
     this.timeControl = timeControl || { initialSeconds: 600, incrementSeconds: 0 };
@@ -1390,7 +1486,12 @@ class ChessRoyaleApp {
       this._toast('Aguardando o segundo jogador entrar na sala...');
       return;
     }
-    if (!this._isTurnInteractive()) return;
+    if (!this._isTurnInteractive()) {
+      if (this._canPremoveNow()) {
+        this._handlePremoveClick(square);
+      }
+      return;
+    }
 
     // Check if clicked square is a valid destination for selected piece
     const matchingMoves = this.legalMoves.filter((m) => m.to === square);
@@ -1547,6 +1648,10 @@ class ChessRoyaleApp {
       if (solved) {
         this.gameEnded = true;
         audioFX.playPromote();
+        const pRes = recordPuzzleSolved();
+        this.playerStats = pRes.stats;
+        this._updateProfileButtonBadge();
+        this._notifyAchievements(pRes.newlyUnlocked);
         this._updateTurnBanner(`Desafio resolvido! Lance exato: ${result.san}`);
         this._toast(`Excelente: "${this.currentPuzzle.title}" resolvido.`);
         this._renderAll(nextEvalScore);
@@ -1576,6 +1681,8 @@ class ChessRoyaleApp {
     // Sound FX, Fallen King Animation & Game Over Card
     if (isGameOver(this.chess) || isKothWin || isThreeCheckWin) {
       this.gameEnded = true;
+      this.premove = null;
+      this.premoveSelectedSquare = null;
       const isMate = isGameCheckmate(this.chess);
       audioFX.playGameOver(isMate || isKothWin || isThreeCheckWin);
       if (isMate) {
@@ -1584,14 +1691,19 @@ class ChessRoyaleApp {
       }
       if (this.gameMode !== 'online') {
         const winner = moverColor === 'w' ? 'Brancas' : 'Pretas';
-        if (isKothWin) {
-          this._showGameOver(`Vitória das ${winner}!`, 'Rei da Colina (Centro dominado!)');
-        } else if (isThreeCheckWin) {
-          this._showGameOver(`Vitória das ${winner}!`, '3-Xeques aplicados!');
-        } else if (isMate) {
-          this._showGameOver(`Vitória das ${winner}!`, 'Xeque-mate');
+        const winnerSide = isKothWin || isThreeCheckWin || isMate ? moverColor : 'draw';
+        const reasonLabel = isKothWin
+          ? 'Rei da Colina (Centro dominado!)'
+          : isThreeCheckWin
+          ? '3-Xeques aplicados!'
+          : isMate
+          ? 'Xeque-mate'
+          : 'Partida empatada pelas regras';
+        this._recordMatchOutcome(winnerSide, reasonLabel);
+        if (winnerSide === 'draw') {
+          this._showGameOver('Empate!', reasonLabel);
         } else {
-          this._showGameOver('Empate!', 'Partida empatada pelas regras');
+          this._showGameOver(`Vitória das ${winner}!`, reasonLabel);
         }
       }
     } else if (inCheckNow) {
@@ -1666,6 +1778,9 @@ class ChessRoyaleApp {
         to: move.to,
         promotion: move.promotion || 'q',
       });
+      if (!this.gameEnded && this.gameMode === 'bot' && this.chess.turn() === this.humanColor) {
+        this._tryExecutePremove();
+      }
     }
   }
 
@@ -1698,6 +1813,8 @@ class ChessRoyaleApp {
       this.humanMoveQualities.pop();
     }
     this.lastCoachMistake = null;
+    this.premove = null;
+    this.premoveSelectedSquare = null;
     document.getElementById('coach-alert-banner').classList.add('hidden');
     const latestSnap = this.moveSnapshots[this.moveSnapshots.length - 1];
     this.historyPreviewPly = null;
@@ -1717,9 +1834,13 @@ class ChessRoyaleApp {
       return;
     }
     this.gameEnded = true;
+    this.premove = null;
+    this.premoveSelectedSquare = null;
     audioFX.playGameOver(false);
     const loser = this.gameMode === 'bot' ? this.humanColor : this.chess.turn();
+    const winnerSide = loser === 'w' ? 'b' : 'w';
     const winnerLabel = loser === 'w' ? 'Pretas vencem por desistência!' : 'Brancas vencem por desistência!';
+    this._recordMatchOutcome(winnerSide, 'Desistência');
     this._updateTurnBanner(winnerLabel);
     this._showGameOver(loser === 'w' ? 'Pretas Venceram!' : 'Brancas Venceram!', 'Por desistência');
     this._toast(winnerLabel);
@@ -1746,8 +1867,12 @@ class ChessRoyaleApp {
 
       if (this.clocks[turn] <= 0) {
         this.gameEnded = true;
+        this.premove = null;
+        this.premoveSelectedSquare = null;
         audioFX.playGameOver(false);
+        const winnerSide = turn === 'w' ? 'b' : 'w';
         const msg = turn === 'w' ? 'Tempo esgotado! Pretas vencem.' : 'Tempo esgotado! Brancas vencem.';
+        this._recordMatchOutcome(winnerSide, 'Tempo esgotado');
         this._updateTurnBanner(msg);
         this._showGameOver(turn === 'w' ? 'Pretas Venceram!' : 'Brancas Venceram!', 'Tempo esgotado');
         this._toast(msg);
@@ -1846,6 +1971,8 @@ class ChessRoyaleApp {
       lastMove: this.lastMove,
       checkSquare,
       hintMove: this.hintMove,
+      premove: this.premove,
+      premoveSelectedSquare: this.premoveSelectedSquare,
       kothMode: this.variant === 'koth',
       threatMap: this._computeThreatMap(),
     });
@@ -1957,6 +2084,12 @@ class ChessRoyaleApp {
     this.currentLesson = null;
     this.lastCoachMistake = null;
     this.humanMoveQualities = [];
+    this.playerStats = loadPlayerStats();
+    this.profileTab = 'history';
+    this.premove = null;
+    this.premoveSelectedSquare = null;
+    this._matchRecorded = false;
+    this._confirmResetArmed = false;
     this.gameMode = 'puzzle';
     this.variant = 'standard';
     this.humanColor = puz.playerColor;
@@ -2115,6 +2248,12 @@ class ChessRoyaleApp {
         openingEl.textContent = `Estudo: ${this.currentLesson.title}`;
       } else if (this.gameMode === 'puzzle' && this.currentPuzzle) {
         openingEl.textContent = `Desafio: ${this.currentPuzzle.theme}`;
+      } else if (
+        moves.length === 0 &&
+        this.moveSnapshots[0]?.fen &&
+        this.moveSnapshots[0].fen !== 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1'
+      ) {
+        openingEl.textContent = 'Posição Personalizada (FEN)';
       } else {
         openingEl.textContent = detectOpeningFromHistory(moves);
       }
@@ -2335,7 +2474,12 @@ class ChessRoyaleApp {
     if (!snap) return;
 
     const targetMoves = this.moveSnapshots.slice(1, ply + 1).map((s) => s.san);
-    this.chess.reset();
+    const startFen = this.moveSnapshots[0]?.fen;
+    if (startFen) {
+      this.chess.load(startFen);
+    } else {
+      this.chess.reset();
+    }
     for (const san of targetMoves) {
       this.chess.move(san);
     }
@@ -2344,9 +2488,12 @@ class ChessRoyaleApp {
 
     this.historyPreviewPly = null;
     this.gameEnded = false;
+    this._matchRecorded = false;
     this.selectedSquare = null;
     this.legalMoves = [];
     this.hintMove = null;
+    this.premove = null;
+    this.premoveSelectedSquare = null;
     this.lastCoachMistake = null;
     document.getElementById('coach-alert-banner').classList.add('hidden');
     this.lastMove = snap.lastMove || null;
@@ -2725,6 +2872,12 @@ class ChessRoyaleApp {
     this.academyStepIndex = 0;
     this.lastCoachMistake = null;
     this.humanMoveQualities = [];
+    this.playerStats = loadPlayerStats();
+    this.profileTab = 'history';
+    this.premove = null;
+    this.premoveSelectedSquare = null;
+    this._matchRecorded = false;
+    this._confirmResetArmed = false;
     this.humanColor = lesson.playerColor || 'w';
     this.timeControl = { initialSeconds: 0, incrementSeconds: 0 };
     this.hasActiveMatch = true;
@@ -2802,6 +2955,10 @@ class ChessRoyaleApp {
         this.gameEnded = true;
         this.academyCompleted.add(lesson.id);
         this._saveAcademyProgress();
+        const aRes = syncAcademyAchievements(this.academyCompleted.size);
+        this.playerStats = aRes.stats;
+        this._updateProfileButtonBadge();
+        this._notifyAchievements(aRes.newlyUnlocked);
         audioFX.playPromote();
         if (badgeEl) badgeEl.textContent = '✓ Concluída';
         if (textEl) textEl.textContent = `✓ ${step.explain} — Lição concluída! Clique em "Próxima →" para continuar.`;
@@ -3159,6 +3316,515 @@ class ChessRoyaleApp {
     } catch {
       this._toast('Use o botão de rotação do celular ou adicione à Tela Inicial.');
     }
+  }
+
+  // ---------- Chess 3D Royale 3.0 Pro: Pre-move, Replay, Keyboard, Profile & FEN/PGN Import ----------
+  _canPremoveNow() {
+    if (this.isOrientationBlocked || this.isInMenu || this.gameEnded || this.pendingPromo) return false;
+    if (this.gameMode === 'bot') return this.chess.turn() !== this.humanColor;
+    if (this.gameMode === 'online') {
+      return (
+        this._onlineRoomSnapshot?.status === 'playing' &&
+        (this.multiplayer.myColor === 'w' || this.multiplayer.myColor === 'b') &&
+        this.multiplayer.myColor !== this.chess.turn()
+      );
+    }
+    return false;
+  }
+
+  _handlePremoveClick(square) {
+    const piece = this.chess.get(square);
+    if (piece && piece.color === this.humanColor) {
+      if (this.premoveSelectedSquare === square) {
+        this.premoveSelectedSquare = null;
+      } else {
+        this.premoveSelectedSquare = square;
+        audioFX.playSelect();
+      }
+      this._renderHighlights();
+      return;
+    }
+
+    if (this.premoveSelectedSquare) {
+      this.premove = { from: this.premoveSelectedSquare, to: square };
+      this.premoveSelectedSquare = null;
+      this._renderHighlights();
+      this._toast(`Pré-lance agendado: ${this.premove.from.toUpperCase()} → ${this.premove.to.toUpperCase()}`);
+      return;
+    }
+
+    if (this.premove) {
+      this.premove = null;
+      this._renderHighlights();
+      this._toast('Pré-lance cancelado.');
+    }
+  }
+
+  _tryExecutePremove() {
+    if (!this.premove || !this._isTurnInteractive()) return;
+    const pm = this.premove;
+    this.premove = null;
+    this.premoveSelectedSquare = null;
+    const moves = this.chess.moves({ square: pm.from, verbose: true });
+    const match = moves.find((m) => m.to === pm.to);
+    if (!match) {
+      this._renderHighlights();
+      this._toast('Pré-lance cancelado (ficou ilegal após jogada adversária).');
+      return;
+    }
+    setTimeout(() => {
+      if (!this._isTurnInteractive()) return;
+      this._commitMove({
+        from: match.from,
+        to: match.to,
+        promotion: match.promotion ? 'q' : undefined,
+      });
+    }, 70);
+  }
+
+  _stepHistoryPreview(action) {
+    if (!this.moveSnapshots || this.moveSnapshots.length === 0) return;
+    const lastIdx = this.moveSnapshots.length - 1;
+    const cur = this.historyPreviewPly !== null ? this.historyPreviewPly : lastIdx;
+    let next = cur;
+    if (action === 'first') next = 0;
+    else if (action === 'prev') next = Math.max(0, cur - 1);
+    else if (action === 'next') next = Math.min(lastIdx, cur + 1);
+    else if (action === 'last') next = lastIdx;
+
+    if (next === lastIdx && !this.gameEnded && this.historyPreviewPly !== null) {
+      this._cancelHistoryPreview();
+    } else {
+      this._previewHistoryPly(next);
+    }
+  }
+
+  _initKeyboardShortcuts() {
+    document.addEventListener('keydown', (e) => {
+      const tag = document.activeElement?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      if (this.isOrientationBlocked) return;
+
+      if (e.key === 'Escape') {
+        const openModals = document.querySelectorAll('.modal:not(.hidden)');
+        if (openModals.length > 0) {
+          openModals.forEach((m) => this._closeModal(m.id));
+          return;
+        }
+        if (this.premove || this.premoveSelectedSquare) {
+          this.premove = null;
+          this.premoveSelectedSquare = null;
+          this._renderHighlights();
+          this._toast('Pré-lance cancelado.');
+        } else if (this.selectedSquare) {
+          this.selectedSquare = null;
+          this.legalMoves = [];
+          this._renderHighlights();
+        }
+        return;
+      }
+
+      if (this.isInMenu) return;
+
+      if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        this._stepHistoryPreview('prev');
+      } else if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        this._stepHistoryPreview('next');
+      } else if (e.key === 'Home') {
+        e.preventDefault();
+        this._stepHistoryPreview('first');
+      } else if (e.key === 'End') {
+        e.preventDefault();
+        this._stepHistoryPreview('last');
+      } else if (e.key === 'f' || e.key === 'F') {
+        const curCam = this.scene3d._currentCameraPreset || 'w';
+        this.scene3d.setCameraView(curCam === 'w' ? 'b' : 'w');
+      } else if (e.key === 'h' || e.key === 'H') {
+        this._requestHint();
+      } else if (e.key === 'z' || e.key === 'Z') {
+        this._undoMove();
+      } else if (e.key === 'm' || e.key === 'M') {
+        const enabled = !audioFX.isEnabled();
+        audioFX.setEnabled(enabled);
+        const soundBtn = document.getElementById('btn-sound-toggle');
+        const soundChk = document.getElementById('chk-settings-sound');
+        if (soundBtn) soundBtn.textContent = enabled ? 'Som' : 'Mudo';
+        if (soundChk) soundChk.checked = enabled;
+      }
+    });
+  }
+
+  _getHumanAverageAccuracy() {
+    if (!this.humanMoveQualities || this.humanMoveQualities.length === 0) return null;
+    const scoreMap = { '!!': 100, '!': 98, '✓': 92, '?!': 65, '??': 22 };
+    const total = this.humanMoveQualities.reduce((sum, item) => sum + (scoreMap[item.symbol] ?? 85), 0);
+    return Math.round(total / this.humanMoveQualities.length);
+  }
+
+  _updateProfileButtonBadge() {
+    const btn = document.getElementById('btn-open-profile');
+    if (btn && this.playerStats) {
+      btn.textContent = `Perfil • ${this.playerStats.elo}`;
+    }
+  }
+
+  _notifyAchievements(list) {
+    if (!Array.isArray(list) || list.length === 0) return;
+    list.forEach((ach, idx) => {
+      setTimeout(() => {
+        this._toast(`Conquista desbloqueada: ${ach.title}!`);
+      }, idx * 550);
+    });
+  }
+
+  _recordMatchOutcome(winnerSide, reason) {
+    if (this._matchRecorded) return;
+    if (this.gameMode === 'puzzle' || this.gameMode === 'academy' || this.gameMode === 'bot_vs_bot') return;
+    this._matchRecorded = true;
+
+    const mySide = this.gameMode === 'local' ? 'w' : this.humanColor;
+    const result = winnerSide === 'draw' ? 'draw' : winnerSide === mySide ? 'win' : 'loss';
+    const moves = this._onlineMovesList || this.chess.history();
+
+    let opponent = 'Jogador Local';
+    let opponentElo = this.playerStats?.elo || 1200;
+    if (this.gameMode === 'bot') {
+      const bot = BOT_LEVELS[this.botLevel];
+      opponent = `Bot ${bot?.name || 'IA'}`;
+      const eloMatch = String(bot?.elo || '').match(/\d+/);
+      opponentElo = eloMatch ? Number(eloMatch[0]) : 1200;
+    } else if (this.gameMode === 'online' && this._onlineRoomSnapshot) {
+      const oppObj = mySide === 'w' ? this._onlineRoomSnapshot.black : this._onlineRoomSnapshot.white;
+      opponent = oppObj?.name || 'Oponente Online';
+      opponentElo = this.playerStats?.elo || 1200;
+    }
+
+    const res = recordCompletedMatch({
+      mode: this.gameMode,
+      opponent,
+      opponentElo,
+      playerColor: mySide,
+      result,
+      reason,
+      opening: detectOpeningFromHistory(moves),
+      accuracy: this._getHumanAverageAccuracy(),
+      moves,
+      fenFinal: this.chess.fen(),
+      botLevel: this.gameMode === 'bot' ? this.botLevel : 0,
+      academyDoneCount: this.academyCompleted.size,
+    });
+    this.playerStats = res.stats;
+    this._updateProfileButtonBadge();
+
+    if (res.eloDelta !== 0) {
+      const sign = res.eloDelta > 0 ? `+${res.eloDelta}` : String(res.eloDelta);
+      this._toast(`ELO atualizado: ${res.stats.elo} (${sign})`);
+    }
+    this._notifyAchievements(res.newlyUnlocked);
+  }
+
+  _openProfileModal() {
+    this.playerStats = loadPlayerStats();
+    this._renderProfileModal();
+    this._openModal('modal-profile');
+  }
+
+  _renderProfileModal() {
+    const st = this.playerStats || loadPlayerStats();
+    const rankEl = document.getElementById('profile-rank-title');
+    const eloEl = document.getElementById('profile-elo-value');
+    if (rankEl) rankEl.textContent = `Patente: ${getRankFromElo(st.elo)} • Pico: ${st.peakElo}`;
+    if (eloEl) eloEl.textContent = String(st.elo);
+
+    const winRate = st.gamesPlayed > 0 ? Math.round((st.wins / st.gamesPlayed) * 100) : 0;
+    const avgAcc = st.avgAccuracyCount > 0 ? `${Math.round(st.avgAccuracySum / st.avgAccuracyCount)}%` : '—';
+
+    document.getElementById('profile-stat-games').textContent = String(st.gamesPlayed);
+    document.getElementById('profile-stat-winrate').textContent = `${winRate}%`;
+    document.getElementById('profile-stat-streak').textContent = String(st.bestStreak);
+    document.getElementById('profile-stat-accuracy').textContent = avgAcc;
+    document.getElementById('profile-stat-academy').textContent = `${this.academyCompleted.size}/46`;
+    document.getElementById('profile-stat-puzzles').textContent = String(st.puzzlesSolved);
+
+    const tabHistBtn = document.getElementById('btn-profile-tab-history');
+    const tabAchBtn = document.getElementById('btn-profile-tab-achievements');
+    const histListEl = document.getElementById('profile-history-list');
+    const achListEl = document.getElementById('profile-achievements-list');
+
+    tabHistBtn?.classList.toggle('active', this.profileTab === 'history');
+    tabAchBtn?.classList.toggle('active', this.profileTab === 'achievements');
+    if (tabAchBtn) {
+      tabAchBtn.textContent = `Conquistas (${st.unlockedAchievements.length}/${ACHIEVEMENTS.length})`;
+    }
+
+    histListEl?.classList.toggle('hidden', this.profileTab !== 'history');
+    achListEl?.classList.toggle('hidden', this.profileTab !== 'achievements');
+
+    if (this.profileTab === 'history' && histListEl) {
+      histListEl.innerHTML = '';
+      if (!st.matchHistory || st.matchHistory.length === 0) {
+        histListEl.innerHTML = '<small class="hint-text">Nenhuma partida concluída registrada ainda.</small>';
+      } else {
+        st.matchHistory.forEach((m) => {
+          const row = document.createElement('div');
+          row.className = 'profile-match-row';
+          const resLabel = m.result === 'win' ? 'Vitória' : m.result === 'loss' ? 'Derrota' : 'Empate';
+          const resClass = m.result === 'win' ? 'badge-cloud' : m.result === 'loss' ? 'badge-demo' : 'badge-local';
+          const deltaStr = m.eloDelta ? ` (${m.eloDelta > 0 ? `+${m.eloDelta}` : m.eloDelta})` : '';
+          const accStr = typeof m.accuracy === 'number' ? ` • ${m.accuracy}% prec.` : '';
+          row.innerHTML = `
+            <div class="profile-match-meta">
+              <div class="profile-match-title">
+                <span class="badge ${resClass}">${resLabel}${this._escapeHtml(deltaStr)}</span>
+                <span>vs ${this._escapeHtml(m.opponent)}</span>
+              </div>
+              <span class="profile-match-sub">${this._escapeHtml(m.opening)} • ${m.movesCount} lances${accStr}</span>
+            </div>
+            <div class="profile-match-right">
+              <button class="btn btn-xs btn-primary" ${!m.moves || m.moves.length === 0 ? 'disabled' : ''}>Rever 3D</button>
+            </div>
+          `;
+          row.querySelector('button').addEventListener('click', () => this._loadSavedMatchReplay(m));
+          histListEl.appendChild(row);
+        });
+      }
+    }
+
+    if (this.profileTab === 'achievements' && achListEl) {
+      achListEl.innerHTML = '';
+      ACHIEVEMENTS.forEach((ach) => {
+        const unlocked = st.unlockedAchievements.includes(ach.id);
+        const card = document.createElement('div');
+        card.className = `achievement-card ${unlocked ? 'unlocked' : ''}`;
+        card.innerHTML = `
+          <div class="achievement-badge">${this._escapeHtml(ach.badge)}</div>
+          <div class="achievement-info">
+            <strong>${this._escapeHtml(ach.title)}</strong>
+            <small>${this._escapeHtml(ach.desc)}</small>
+          </div>
+        `;
+        achListEl.appendChild(card);
+      });
+    }
+
+    this._renderProfileEloChart();
+  }
+
+  _renderProfileEloChart() {
+    const canvas = document.getElementById('profile-elo-canvas');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const w = canvas.width;
+    const h = canvas.height;
+    ctx.clearRect(0, 0, w, h);
+    ctx.fillStyle = '#0c0c0f';
+    ctx.fillRect(0, 0, w, h);
+
+    const data = this.playerStats?.eloHistory?.length ? this.playerStats.eloHistory : [1000];
+    const minVal = Math.min(...data) - 25;
+    const maxVal = Math.max(...data) + 25;
+    const span = Math.max(50, maxVal - minVal);
+    const toY = (v) => h - 10 - ((v - minVal) / span) * (h - 20);
+
+    ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+    ctx.beginPath();
+    ctx.moveTo(0, h / 2);
+    ctx.lineTo(w, h / 2);
+    ctx.stroke();
+
+    if (data.length === 1) {
+      ctx.fillStyle = '#c29b61';
+      ctx.beginPath();
+      ctx.arc(w / 2, toY(data[0]), 4, 0, Math.PI * 2);
+      ctx.fill();
+      return;
+    }
+
+    ctx.beginPath();
+    data.forEach((val, idx) => {
+      const x = 10 + (idx / (data.length - 1)) * (w - 20);
+      const y = toY(val);
+      if (idx === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    });
+    ctx.strokeStyle = '#c29b61';
+    ctx.lineWidth = 2.2;
+    ctx.stroke();
+
+    const lastX = w - 10;
+    const lastY = toY(data[data.length - 1]);
+    ctx.fillStyle = '#e6d7be';
+    ctx.beginPath();
+    ctx.arc(lastX, lastY, 4, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  _loadSavedMatchReplay(matchObj) {
+    this.multiplayer.leaveRoom();
+    const url = new URL(window.location.href);
+    url.searchParams.delete('room');
+    url.searchParams.delete('key');
+    window.history.replaceState({}, '', url.toString());
+
+    document.getElementById('online-panel').classList.add('hidden');
+    document.getElementById('puzzle-banner').classList.add('hidden');
+    document.getElementById('academy-panel').classList.add('hidden');
+    document.getElementById('coach-alert-banner').classList.add('hidden');
+    document.getElementById('btn-draw').classList.add('hidden');
+    document.getElementById('btn-undo').classList.remove('hidden');
+
+    this.gameMode = 'local';
+    this.variant = 'standard';
+    this.currentPuzzle = null;
+    this.currentLesson = null;
+    this.humanColor = matchObj.playerColor || 'w';
+    this.timeControl = { initialSeconds: 0, incrementSeconds: 0 };
+    this.hasActiveMatch = true;
+    this.gameEnded = false;
+    this._matchRecorded = true;
+    this.premove = null;
+    this.premoveSelectedSquare = null;
+    this.lastCoachMistake = null;
+    this.selectedSquare = null;
+    this.legalMoves = [];
+    this.hintMove = null;
+    this._onlineMovesList = null;
+    this._onlineRoomSnapshot = null;
+
+    this._rebuildSnapshotsFromSanList(matchObj.moves || []);
+    const lastSnap = this.moveSnapshots[this.moveSnapshots.length - 1];
+    if (lastSnap) {
+      this.chess.load(lastSnap.fen);
+      this.lastMove = lastSnap.lastMove || null;
+    }
+
+    this._closeModal('modal-profile');
+    this._hideGameOver();
+    this._hideMainMenu();
+    this.scene3d.setCameraView(this.humanColor);
+    this._previewHistoryPly(0);
+    this._toast(`Replay vs ${matchObj.opponent} carregado! Use ⏮ ◀ ▶ ⏭ ou as setas ← →.`);
+  }
+
+  _importFenOrPgn() {
+    const raw = document.getElementById('import-fen-pgn-input')?.value?.trim();
+    if (!raw) {
+      this._toast('Cole um código FEN ou PGN para carregar.');
+      return;
+    }
+
+    let startFen = new Chess().fen();
+    let moves = [];
+    let isValid = false;
+
+    const fenProbe = new Chess();
+    try {
+      fenProbe.load(raw);
+      startFen = fenProbe.fen();
+      isValid = true;
+    } catch {
+      const pgnProbe = new Chess();
+      try {
+        pgnProbe.loadPgn(raw);
+        const h = pgnProbe.history();
+        if (h.length > 0) {
+          moves = h;
+          const headerFen = pgnProbe.header()?.FEN;
+          if (headerFen) startFen = headerFen;
+          isValid = true;
+        }
+      } catch {
+        isValid = false;
+      }
+    }
+
+    if (!isValid) {
+      this._toast('FEN ou PGN inválido. Verifique a notação e tente novamente.');
+      return;
+    }
+
+    this.multiplayer.leaveRoom();
+    const url = new URL(window.location.href);
+    url.searchParams.delete('room');
+    url.searchParams.delete('key');
+    window.history.replaceState({}, '', url.toString());
+
+    document.getElementById('online-panel').classList.add('hidden');
+    document.getElementById('puzzle-banner').classList.add('hidden');
+    document.getElementById('academy-panel').classList.add('hidden');
+    document.getElementById('coach-alert-banner').classList.add('hidden');
+    document.getElementById('move-quality-badge').classList.add('hidden');
+    document.getElementById('btn-draw').classList.add('hidden');
+    document.getElementById('btn-undo').classList.remove('hidden');
+
+    const playMode = document.getElementById('import-play-mode')?.value || 'local';
+    const botLevel = Number(document.getElementById('import-bot-level')?.value || 5);
+
+    this.chess.load(startFen);
+    this.evalHistory = [evaluateBoardScore(this.chess.fen()).pawns || 0];
+    this.moveSnapshots = [
+      {
+        ply: 0,
+        san: 'Início',
+        fen: startFen,
+        lastMove: null,
+        clocks: { w: 600000, b: 600000 },
+      },
+    ];
+    for (const san of moves) {
+      const res = this.chess.move(san);
+      if (!res) break;
+      const ev = evaluateBoardScore(this.chess.fen());
+      this.evalHistory.push(ev.mateIn === 0 ? (ev.winner === 'w' ? 15 : -15) : ev.pawns);
+      this.moveSnapshots.push({
+        ply: this.moveSnapshots.length,
+        san: res.san,
+        from: res.from,
+        to: res.to,
+        fen: this.chess.fen(),
+        lastMove: { from: res.from, to: res.to, san: res.san },
+        clocks: { w: 600000, b: 600000 },
+      });
+    }
+    this._saveSnapshots();
+
+    this.gameMode = playMode === 'bot' ? 'bot' : 'local';
+    this.variant = 'standard';
+    this.checksCount = { w: 0, b: 0 };
+    this.botLevel = botLevel;
+    this.humanColor = this.chess.turn();
+    this.currentPuzzle = null;
+    this.currentLesson = null;
+    this.humanMoveQualities = [];
+    this.lastCoachMistake = null;
+    this.premove = null;
+    this.premoveSelectedSquare = null;
+    this._matchRecorded = false;
+    this.timeControl = { initialSeconds: 0, incrementSeconds: 0 };
+    this.hasActiveMatch = true;
+    this.gameEnded = isGameOver(this.chess);
+    this.historyPreviewPly = null;
+    this.selectedSquare = null;
+    this.legalMoves = [];
+    this.hintMove = null;
+    this.lastMove = this.moveSnapshots[this.moveSnapshots.length - 1]?.lastMove || null;
+    this._onlineMovesList = null;
+    this._onlineRoomSnapshot = null;
+
+    this._closeModal('modal-import-position');
+    this._hideGameOver();
+    this._hideMainMenu();
+    this.scene3d.rebuildAllPieces(this.chess.board(), this.customization);
+    this.scene3d.setCameraView(this.humanColor);
+    this._updateConnectionBadge();
+    this._renderAll();
+    this._toast(
+      moves.length > 0
+        ? `PGN importado (${moves.length} lances)!`
+        : `Posição FEN carregada (${this.gameMode === 'bot' ? 'vs Bot' : 'Análise Livre'}).`
+    );
   }
 
   _toast(message) {

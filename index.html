@@ -34,6 +34,7 @@
           <button id="btn-new-game" class="btn btn-primary">Nova Partida</button>
           <button id="btn-open-academy" class="btn btn-ghost">Academia</button>
           <button id="btn-open-friends" class="btn btn-ghost">Amigos <span id="friends-notif-badge" class="notif-badge hidden">0</span></button>
+          <button id="btn-open-profile" class="btn btn-ghost" title="Perfil, ELO, Histórico e Conquistas">Perfil • 1000</button>
           <button id="btn-piece-studio" class="btn btn-ghost">Peças 3D</button>
           <button id="btn-online-lobby" class="btn btn-ghost">Multiplayer</button>
           <button id="btn-lighting-toggle" class="btn btn-ghost" title="Alternar iluminação do jogo (Sem Luz / Penumbra / Com Luz)">◐ Luz: Penumbra</button>
@@ -143,6 +144,24 @@
               <span class="menu-card-arrow">→</span>
             </button>
 
+            <button class="menu-card" data-menu-action="profile">
+              <div class="menu-card-icon">★</div>
+              <div class="menu-card-body">
+                <strong>Perfil, ELO &amp; Histórico</strong>
+                <p>Acompanhe seu rating ELO, medalhas desbloqueadas e reveja partidas salvas em 3D.</p>
+              </div>
+              <span class="menu-card-arrow">→</span>
+            </button>
+
+            <button class="menu-card" data-menu-action="import">
+              <div class="menu-card-icon">▤</div>
+              <div class="menu-card-body">
+                <strong>Importar FEN / PGN</strong>
+                <p>Carregue qualquer posição ou partida real para analisar no tabuleiro 3D ou jogar contra a IA.</p>
+              </div>
+              <span class="menu-card-arrow">→</span>
+            </button>
+
             <button class="menu-card" data-menu-action="settings">
               <div class="menu-card-icon">⚙</div>
               <div class="menu-card-body">
@@ -235,6 +254,7 @@
             <div id="gameover-accuracy" class="gameover-accuracy hidden"></div>
             <div class="gameover-actions">
               <button id="btn-gameover-rematch" class="btn btn-primary">Jogar Novamente</button>
+              <button id="btn-gameover-review" class="btn btn-ghost">Rever Partida</button>
               <button id="btn-gameover-studio" class="btn btn-ghost">Estúdio de Peças</button>
               <button id="btn-gameover-menu" class="btn btn-ghost">Menu Principal</button>
             </div>
@@ -364,6 +384,12 @@
               </div>
             </div>
             <div id="move-history-list" class="move-history-list"></div>
+            <div class="history-nav-bar">
+              <button id="btn-hist-first" class="btn btn-xs btn-ghost" title="Primeiro lance (Home)">⏮</button>
+              <button id="btn-hist-prev" class="btn btn-xs btn-ghost" title="Lance anterior (←)">◀</button>
+              <button id="btn-hist-next" class="btn btn-xs btn-ghost" title="Próximo lance (→)">▶</button>
+              <button id="btn-hist-last" class="btn btn-xs btn-ghost" title="Posição atual (End)">⏭</button>
+            </div>
           </div>
 
           <!-- Bottom Player Card -->
@@ -802,6 +828,119 @@
               <div id="friends-list" class="friends-sublist"></div>
             </div>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- MODAL 8: Player Career Profile, ELO & Achievements -->
+    <div id="modal-profile" class="modal hidden">
+      <div class="modal-card modal-wide">
+        <div class="modal-header">
+          <div>
+            <h2>Perfil &amp; Carreira</h2>
+            <small id="profile-rank-title" class="hint-text">Patente: Amador</small>
+          </div>
+          <button class="modal-close" data-close="modal-profile">✕</button>
+        </div>
+        <div class="modal-body">
+          <div class="profile-hero">
+            <div class="profile-elo-badge">
+              <span class="hint-text">Rating ELO</span>
+              <strong id="profile-elo-value" class="mono">1000</strong>
+            </div>
+            <div class="profile-elo-chart-wrap" title="Evolução do seu ELO nas últimas partidas">
+              <canvas id="profile-elo-canvas" width="520" height="84"></canvas>
+            </div>
+          </div>
+
+          <div class="profile-kpi-grid">
+            <div class="profile-kpi-card">
+              <span>Partidas</span>
+              <strong id="profile-stat-games" class="mono">0</strong>
+            </div>
+            <div class="profile-kpi-card">
+              <span>Taxa de Vitória</span>
+              <strong id="profile-stat-winrate" class="mono">0%</strong>
+            </div>
+            <div class="profile-kpi-card">
+              <span>Melhor Sequência</span>
+              <strong id="profile-stat-streak" class="mono">0</strong>
+            </div>
+            <div class="profile-kpi-card">
+              <span>Precisão Média</span>
+              <strong id="profile-stat-accuracy" class="mono">—</strong>
+            </div>
+            <div class="profile-kpi-card">
+              <span>Academia</span>
+              <strong id="profile-stat-academy" class="mono">0/46</strong>
+            </div>
+            <div class="profile-kpi-card">
+              <span>Puzzles</span>
+              <strong id="profile-stat-puzzles" class="mono">0</strong>
+            </div>
+          </div>
+
+          <div class="profile-tabs">
+            <button id="btn-profile-tab-history" class="academy-tab-btn active">Histórico de Partidas</button>
+            <button id="btn-profile-tab-achievements" class="academy-tab-btn">Conquistas (10)</button>
+          </div>
+
+          <div id="profile-history-list" class="profile-history-list"></div>
+          <div id="profile-achievements-list" class="profile-achievements-grid hidden"></div>
+        </div>
+        <div class="modal-footer">
+          <button id="btn-reset-stats" class="btn btn-danger">Zerar Estatísticas</button>
+          <button class="btn btn-ghost" data-close="modal-profile">Fechar</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- MODAL 9: Import FEN / PGN Position -->
+    <div id="modal-import-position" class="modal hidden">
+      <div class="modal-card">
+        <div class="modal-header">
+          <h2>Importar FEN ou PGN</h2>
+          <button class="modal-close" data-close="modal-import-position">✕</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-row">
+            <label for="import-fen-pgn-input">Cole uma string FEN ou PGN completo</label>
+            <textarea id="import-fen-pgn-input" class="input textarea-code mono" rows="5" placeholder="Ex FEN: r1bqkbnr/pppp1ppp/2n5/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R b KQkq - 3 3&#10;Ou PGN: 1. e4 e5 2. Nf3 Nc6 3. Bb5 a6"></textarea>
+          </div>
+
+          <div class="form-row">
+            <label>Posições Famosas (1 clique)</label>
+            <div class="import-presets-row">
+              <button type="button" class="btn btn-xs btn-ghost" data-import-preset="sicilian">Siciliana Najdorf</button>
+              <button type="button" class="btn btn-xs btn-ghost" data-import-preset="lucena">Ponte de Lucena</button>
+              <button type="button" class="btn btn-xs btn-ghost" data-import-preset="immortal">Partida Imortal</button>
+            </div>
+          </div>
+
+          <div class="form-grid-2">
+            <div class="form-row">
+              <label for="import-play-mode">Modo ao Carregar</label>
+              <select id="import-play-mode" class="input">
+                <option value="local" selected>Análise Livre (Local)</option>
+                <option value="bot">Jogar vs Bot IA</option>
+              </select>
+            </div>
+            <div class="form-row">
+              <label for="import-bot-level">Nível do Bot (se vs Bot)</label>
+              <select id="import-bot-level" class="input">
+                <option value="1">Nível 1 — Sofia (~600)</option>
+                <option value="2">Nível 2 — Lucas (~1000)</option>
+                <option value="3">Nível 3 — Viktor (~1400)</option>
+                <option value="4">Nível 4 — Mikhail (~1800)</option>
+                <option value="5" selected>Nível 5 — Aegis GM (~2200)</option>
+                <option value="6">Nível 6 — Omega (~2600+)</option>
+              </select>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-ghost" data-close="modal-import-position">Cancelar</button>
+          <button id="btn-load-fen-pgn" class="btn btn-primary">Carregar no Tabuleiro 3D</button>
         </div>
       </div>
     </div>
